@@ -20,7 +20,6 @@ import {
   Palmtree,
   HardHat,
   Bus,
-  Car,
   PackageCheck,
   BookOpen,
   UserCog,
@@ -30,6 +29,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAppSettings } from '@/hooks/useAppSettings';
+import { useRevisionAlerts } from '@/hooks/useRevisions';
 
 const navItems = [
   { key: 'dashboard', icon: LayoutDashboard, path: '/', module: 'dashboard' },
@@ -42,6 +42,8 @@ const navItems = [
   { key: 'transportTouristique', icon: Palmtree, path: '/transport-touristique', module: 'transport_touristique' },
   { key: 'transportVoyageurs', icon: Bus, path: '/transport-voyageurs', module: 'transport_voyageurs' },
   { key: 'transportTMS', icon: PackageCheck, path: '/transport-tms', module: 'transport_tms' },
+  { key: 'clients', icon: Users, path: '/clients', module: 'clients' },
+  { key: 'revisions', icon: FileText, path: '/revisions', module: 'revisions' },
   { key: 'fuel', icon: Fuel, path: '/fuel', module: 'fuel' },
   { key: 'citerne', icon: Droplets, path: '/citerne', module: 'citerne' },
   { key: 'maintenance', icon: Wrench, path: '/maintenance', module: 'maintenance' },
@@ -61,6 +63,8 @@ export function Sidebar() {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
   const { moduleSettings } = useAppSettings();
+  const { data: revAlerts = [] } = useRevisionAlerts();
+  const dueOverdueCount = (revAlerts as any[]).filter((a) => !a.ack && (a.status === 'due' || a.status === 'overdue')).length;
 
   const handleSignOut = async () => {
     const { error } = await signOut();
@@ -78,6 +82,9 @@ export function Sidebar() {
     return moduleSettings[item.module as keyof typeof moduleSettings] !== false;
   });
 
+  const computedNavItems = filteredNavItems.map((item) =>
+    item.key === 'alerts' ? { ...item, badge: dueOverdueCount } : item
+  );
   return (
     <aside
       className={cn(
@@ -87,14 +94,12 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-sidebar-border">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary via-info to-success flex items-center justify-center relative">
-            <Truck className="w-3.5 h-3.5 text-white absolute left-1 top-1" />
-            <Car className="w-3.5 h-3.5 text-white absolute right-1 top-1" />
-            <Bus className="w-3.5 h-3.5 text-white absolute left-1 bottom-1" />
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-lg flex items-center justify-center bg-transparent">
+            <img src="/Parc_Gps_logo_transparent-10.png" alt="Parc gps" className="w-14 h-14 object-contain" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-sidebar-foreground">Track parc</h1>
+            <h1 className="text-lg font-bold text-sidebar-foreground">Parc gps</h1>
             <p className="text-[10px] text-sidebar-muted uppercase tracking-wider">Maroc</p>
           </div>
         </div>
@@ -119,7 +124,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-thin">
         <ul className="space-y-1">
-          {filteredNavItems.map((item) => {
+          {computedNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
 

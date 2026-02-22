@@ -11,6 +11,8 @@ import { useCreateDriver, useDrivers } from '@/hooks/useDrivers';
 import { useGPSwoxData } from '@/hooks/useGPSwoxVehicles';
 import { useGPSwoxGeofences } from '@/hooks/useGPSwoxGeofences';
 import { Calendar, MapPin, Users, Clock, FileText } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useState } from 'react';
 
 const formSchema = z.object({
   title: z.string().min(2, 'Le titre est requis'),
@@ -43,6 +45,8 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
   const vehicles = gpswoxData?.vehicles || [];
   const gpswoxDrivers = gpswoxData?.drivers || [];
   const { data: geofences } = useGPSwoxGeofences();
+  const [pickupMode, setPickupMode] = useState<'select' | 'input'>('select');
+  const [dropoffMode, setDropoffMode] = useState<'select' | 'input'>('select');
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -296,20 +300,33 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
                   <MapPin className="w-4 h-4" />
                   Lieu de prise en charge
                 </FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner un lieu" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {geofences?.map((geofence) => (
-                      <SelectItem key={geofence.id} value={geofence.name}>
-                        {geofence.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Tabs value={pickupMode} onValueChange={(v) => setPickupMode(v as 'select' | 'input')}>
+                  <TabsList className="grid grid-cols-2 w-full mb-2">
+                    <TabsTrigger value="select">Sélectionner un lieu</TabsTrigger>
+                    <TabsTrigger value="input">Taper un lieu</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="select">
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionner un lieu" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {geofences?.map((geofence) => (
+                          <SelectItem key={geofence.id} value={geofence.name}>
+                            {geofence.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TabsContent>
+                  <TabsContent value="input">
+                    <FormControl>
+                      <Input placeholder="Saisir un lieu..." value={field.value || ''} onChange={(e) => field.onChange(e.target.value)} />
+                    </FormControl>
+                  </TabsContent>
+                </Tabs>
                 <FormMessage />
               </FormItem>
             )}
@@ -324,20 +341,33 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
                   <MapPin className="w-4 h-4" />
                   Lieu de destination
                 </FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner un lieu" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {geofences?.map((geofence) => (
-                      <SelectItem key={geofence.id} value={geofence.name}>
-                        {geofence.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Tabs value={dropoffMode} onValueChange={(v) => setDropoffMode(v as 'select' | 'input')}>
+                  <TabsList className="grid grid-cols-2 w-full mb-2">
+                    <TabsTrigger value="select">Sélectionner un lieu</TabsTrigger>
+                    <TabsTrigger value="input">Taper un lieu</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="select">
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionner un lieu" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {geofences?.map((geofence) => (
+                          <SelectItem key={geofence.id} value={geofence.name}>
+                            {geofence.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TabsContent>
+                  <TabsContent value="input">
+                    <FormControl>
+                      <Input placeholder="Saisir un lieu..." value={field.value || ''} onChange={(e) => field.onChange(e.target.value)} />
+                    </FormControl>
+                  </TabsContent>
+                </Tabs>
                 <FormMessage />
               </FormItem>
             )}

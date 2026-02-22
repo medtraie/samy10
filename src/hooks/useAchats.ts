@@ -143,6 +143,25 @@ export function usePurchaseRequests() {
   });
 }
 
+export function usePurchaseRequestsPaged(page: number, pageSize: number) {
+  return useQuery({
+    queryKey: ['achats_purchase_requests_paged', page, pageSize],
+    queryFn: async () => {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const { data, count, error } = await supabase
+        .from('achats_purchase_requests')
+        .select('*', { count: 'exact' })
+        .order('request_date', { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return { data: (data || []) as PurchaseRequest[], count: count ?? (data?.length || 0) };
+    },
+    placeholderData: (prev) => prev,
+    staleTime: 60000,
+  });
+}
+
 export function useCreatePurchaseRequest() {
   return useCrudMutation(
     ['achats_purchase_requests'],
@@ -216,6 +235,25 @@ export function usePurchaseOrders() {
       if (error) throw error;
       return data as PurchaseOrder[];
     },
+  });
+}
+
+export function usePurchaseOrdersPaged(page: number, pageSize: number) {
+  return useQuery({
+    queryKey: ['achats_purchase_orders_paged', page, pageSize],
+    queryFn: async () => {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const { data, count, error } = await supabase
+        .from('achats_purchase_orders')
+        .select('*', { count: 'exact' })
+        .order('order_date', { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return { data: (data || []) as PurchaseOrder[], count: count ?? (data?.length || 0) };
+    },
+    placeholderData: (prev) => prev,
+    staleTime: 60000,
   });
 }
 
@@ -295,6 +333,25 @@ export function useDeliveryNotes() {
   });
 }
 
+export function useDeliveryNotesPaged(page: number, pageSize: number) {
+  return useQuery({
+    queryKey: ['achats_delivery_notes_paged', page, pageSize],
+    queryFn: async () => {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const { data, count, error } = await supabase
+        .from('achats_delivery_notes')
+        .select('*', { count: 'exact' })
+        .order('delivery_date', { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return { data: (data || []) as DeliveryNote[], count: count ?? (data?.length || 0) };
+    },
+    placeholderData: (prev) => prev,
+    staleTime: 60000,
+  });
+}
+
 export function useCreateDeliveryNote() {
   return useCrudMutation(
     ['achats_delivery_notes'],
@@ -367,6 +424,85 @@ export function useSupplierInvoices() {
         .order('invoice_date', { ascending: false });
       if (error) throw error;
       return data as SupplierInvoice[];
+    },
+  });
+}
+
+export function useSupplierInvoicesPaged(page: number, pageSize: number) {
+  return useQuery({
+    queryKey: ['achats_supplier_invoices_paged', page, pageSize],
+    queryFn: async () => {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const { data, count, error } = await supabase
+        .from('achats_supplier_invoices')
+        .select('*', { count: 'exact' })
+        .order('invoice_date', { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return { data: (data || []) as SupplierInvoice[], count: count ?? (data?.length || 0) };
+    },
+    placeholderData: (prev) => prev,
+    staleTime: 60000,
+  });
+}
+
+export function usePurchaseRequestItems(requestId: string | null) {
+  return useQuery({
+    queryKey: ['achats_purchase_request_items', requestId],
+    enabled: !!requestId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('achats_purchase_request_items')
+        .select('*')
+        .eq('request_id', requestId);
+      if (error) throw error;
+      return data as PurchaseRequestItem[];
+    },
+  });
+}
+
+export function usePurchaseOrderItems(orderId: string | null) {
+  return useQuery({
+    queryKey: ['achats_purchase_order_items', orderId],
+    enabled: !!orderId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('achats_purchase_order_items')
+        .select('*')
+        .eq('order_id', orderId);
+      if (error) throw error;
+      return data as PurchaseOrderItem[];
+    },
+  });
+}
+
+export function useDeliveryNoteItems(deliveryId: string | null) {
+  return useQuery({
+    queryKey: ['achats_delivery_note_items', deliveryId],
+    enabled: !!deliveryId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('achats_delivery_note_items')
+        .select('*')
+        .eq('delivery_id', deliveryId);
+      if (error) throw error;
+      return data as DeliveryNoteItem[];
+    },
+  });
+}
+
+export function useSupplierInvoiceItems(invoiceId: string | null) {
+  return useQuery({
+    queryKey: ['achats_supplier_invoice_items', invoiceId],
+    enabled: !!invoiceId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('achats_supplier_invoice_items')
+        .select('*')
+        .eq('invoice_id', invoiceId);
+      if (error) throw error;
+      return data as SupplierInvoiceItem[];
     },
   });
 }

@@ -49,7 +49,7 @@ export function BaggageList() {
       <body>
         <div class="baggage">
           <div class="header">
-            <div class="company">Track parc Transport</div>
+            <div class="company">Parc gps Transport</div>
             <div>BAGAGE</div>
           </div>
           <div class="number">${item.baggage_number}</div>

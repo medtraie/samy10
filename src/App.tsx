@@ -21,6 +21,8 @@ import TransportBTP from "./pages/TransportBTP";
 import TransportTouristique from "./pages/TransportTouristique";
 import TransportVoyageurs from "./pages/TransportVoyageurs";
 import TransportTMS from "./pages/TransportTMS";
+import Clients from "./pages/Clients";
+import Revisions from "./pages/Revisions";
 import FinancePage from "./pages/FinancePage";
 import SettingsPage from "./pages/SettingsPage";
 import {
@@ -56,6 +58,8 @@ const App = () => (
           <Route path="/transport-touristique" element={<ProtectedRoute><TransportTouristique /></ProtectedRoute>} />
           <Route path="/transport-voyageurs" element={<ProtectedRoute><TransportVoyageurs /></ProtectedRoute>} />
           <Route path="/transport-tms" element={<ProtectedRoute><TransportTMS /></ProtectedRoute>} />
+          <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+          <Route path="/revisions" element={<ProtectedRoute><Revisions /></ProtectedRoute>} />
           <Route path="/comptabilite" element={<ProtectedRoute><Comptabilite /></ProtectedRoute>} />
           <Route path="/citerne" element={<ProtectedRoute><Citerne /></ProtectedRoute>} />
           <Route path="/achats" element={<ProtectedRoute><AchatsPage /></ProtectedRoute>} />

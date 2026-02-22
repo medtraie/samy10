@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Users, Search, Filter, LayoutGrid, List, UserCheck, UserX, Clock, Loader2, Car, Wifi, WifiOff, Plus, Bug } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -18,6 +18,14 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DriverForm } from '@/components/drivers/DriverForm';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { useUpdateDriver } from '@/hooks/useDrivers';
 
 interface MappedDriver {
   id: string;
@@ -41,9 +49,14 @@ export default function Drivers() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [hideGPSwox, setHideGPSwox] = useState(false);
 
   const { data: drivers = [], isLoading: isLoadingDrivers } = useDrivers();
   const { data: gpswoxData, isLoading: isLoadingGPSwox, error: gpswoxError } = useGPSwoxData();
+  const updateDriver = useUpdateDriver();
+  const [restDialogDriver, setRestDialogDriver] = useState<MappedDriver | null>(null);
+  const [restStart, setRestStart] = useState<string>(() => new Date().toISOString().slice(0,10));
+  const [restDays, setRestDays] = useState<number>(1);
   
   const vehicles = gpswoxData?.vehicles || [];
   const gpswoxDrivers = gpswoxData?.drivers || [];
@@ -153,6 +166,33 @@ export default function Drivers() {
     return [...localDrivers, ...remoteDrivers];
   }, [drivers, vehicles, gpswoxDrivers]);
 
+  useEffect(() => {
+    mappedDrivers.forEach(d => {
+      const key = `driver_rest_${d.id}`;
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      const end = new Date(data.end);
+      const now = new Date();
+      if (now >= end && d.source === 'local' && d.status === 'off_duty') {
+        updateDriver.mutate({ id: d.id, status: 'available' });
+        localStorage.removeItem(key);
+      }
+    });
+  }, [mappedDrivers, updateDriver]);
+
+  const handleSaveRest = () => {
+    if (!restDialogDriver) return;
+    const start = new Date(restStart);
+    const end = new Date(restStart);
+    end.setDate(start.getDate() + Number(restDays));
+    const key = `driver_rest_${restDialogDriver.id}`;
+    localStorage.setItem(key, JSON.stringify({ start: start.toISOString(), end: end.toISOString(), days: Number(restDays) }));
+    if (restDialogDriver.source === 'local') {
+      updateDriver.mutate({ id: restDialogDriver.id, status: 'off_duty' });
+    }
+    setRestDialogDriver(null);
+  };
   // Filter drivers
   const filteredDrivers = mappedDrivers.filter((driver) => {
     const matchesSearch = 
@@ -160,7 +200,8 @@ export default function Drivers() {
       driver.phone.includes(searchQuery) ||
       (driver.vehiclePlate?.toLowerCase().includes(searchQuery.toLowerCase()) || false);
     const matchesStatus = statusFilter === 'all' || driver.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesSource = !hideGPSwox || driver.source !== 'gpswox';
+    return matchesSearch && matchesStatus && matchesSource;
   });
 
   // Status counts
@@ -261,6 +302,14 @@ export default function Drivers() {
                 GPSwox: {gpswoxDrivers.length}
               </Badge>
             )}
+            <Button 
+              variant={hideGPSwox ? 'secondary' : 'outline'} 
+              size="sm" 
+              onClick={() => setHideGPSwox(!hideGPSwox)}
+              className="px-3"
+            >
+              {hideGPSwox ? 'Afficher GPSwox' : 'Masquer GPSwox'}
+            </Button>
             <Button className="flex items-center gap-2" onClick={() => setIsAddDialogOpen(true)}>
               <Plus className="w-4 h-4" />
               Ajouter un conducteur
@@ -414,7 +463,7 @@ export default function Drivers() {
               : 'space-y-3'
           )}>
             {filteredDrivers.map((driver) => (
-              <DriverCardComponent key={driver.id} driver={driver} viewMode={viewMode} />
+              <DriverCardComponent key={driver.id} driver={driver} viewMode={viewMode} onOpenRepos={() => setRestDialogDriver(driver)} />
             ))}
           </div>
         ) : (
@@ -442,12 +491,35 @@ export default function Drivers() {
         open={isAddDialogOpen} 
         onOpenChange={setIsAddDialogOpen}
       />
+      <Dialog open={!!restDialogDriver} onOpenChange={(v) => !v && setRestDialogDriver(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Mettre en repos</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <span className="text-sm text-muted-foreground">Date de début</span>
+                <Input type="date" value={restStart} onChange={(e) => setRestStart(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <span className="text-sm text-muted-foreground">Jours de repos</span>
+                <Input type="number" min={1} value={restDays} onChange={(e) => setRestDays(Number(e.target.value))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestDialogDriver(null)}>Annuler</Button>
+            <Button onClick={handleSaveRest}>Enregistrer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
 
 // Driver Card Component
-function DriverCardComponent({ driver, viewMode }: { driver: MappedDriver; viewMode: 'grid' | 'list' }) {
+function DriverCardComponent({ driver, viewMode, onOpenRepos }: { driver: MappedDriver; viewMode: 'grid' | 'list'; onOpenRepos: () => void }) {
   const statusConfig = {
     available: { label: 'Disponible', color: 'bg-success text-success-foreground' },
     on_mission: { label: 'En mission', color: 'bg-info text-info-foreground' },
@@ -456,6 +528,10 @@ function DriverCardComponent({ driver, viewMode }: { driver: MappedDriver; viewM
 
   const config = statusConfig[driver.status];
   const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const restKey = `driver_rest_${driver.id}`;
+  const restRaw = typeof window !== 'undefined' ? localStorage.getItem(restKey) : null;
+  const restData = restRaw ? JSON.parse(restRaw) : null;
+  const daysLeft = restData ? Math.max(0, Math.ceil((new Date(restData.end).getTime() - Date.now()) / 86400000)) : null;
 
   if (viewMode === 'list') {
     return (
@@ -502,7 +578,15 @@ function DriverCardComponent({ driver, viewMode }: { driver: MappedDriver; viewM
                   {driver.vehiclePlate}
                 </Badge>
               )}
-              <Badge className={config.color}>{config.label}</Badge>
+              <Badge className={config.color}>
+                {config.label}
+                {daysLeft !== null && (
+                  <span className="ml-1 text-destructive font-semibold">• reste {daysLeft}j</span>
+                )}
+              </Badge>
+              {driver.source === 'local' && (
+                <Button size="sm" variant="secondary" onClick={onOpenRepos}>Repos</Button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -539,7 +623,15 @@ function DriverCardComponent({ driver, viewMode }: { driver: MappedDriver; viewM
                 GPSwox
               </Badge>
             )}
-            <Badge className={cn(config.color, "h-fit")}>{config.label}</Badge>
+            <Badge className={cn(config.color, "h-fit")}>
+              {config.label}
+              {daysLeft !== null && (
+                <span className="ml-1 text-destructive font-semibold">• reste {daysLeft}j</span>
+              )}
+            </Badge>
+            {driver.source === 'local' && (
+              <Button size="sm" variant="secondary" onClick={onOpenRepos}>Repos</Button>
+            )}
           </div>
         </div>
         

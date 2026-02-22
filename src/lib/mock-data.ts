@@ -1,4 +1,4 @@
-// Mock data for Track parc Maroc
+// Mock data for Parc gps Maroc
 // All monetary values in MAD (Moroccan Dirham)
 
 export interface Vehicle {

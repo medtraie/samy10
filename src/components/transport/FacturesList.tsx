@@ -101,7 +101,7 @@ export function FacturesList() {
     doc.rect(0, 0, 210, 32, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
-    doc.text('Track parc', 14, 18);
+    doc.text('Parc gps', 14, 18);
     doc.setFontSize(11);
     doc.text('Facture', 14, 26);
 

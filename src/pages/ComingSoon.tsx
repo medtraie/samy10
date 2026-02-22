@@ -37,10 +37,14 @@ import {
   useDeletePurchaseOrder,
   useDeletePurchaseRequest,
   useDeleteSupplierInvoice,
-  useDeliveryNotes,
-  usePurchaseOrders,
-  usePurchaseRequests,
-  useSupplierInvoices,
+  useDeliveryNotesPaged,
+  usePurchaseOrdersPaged,
+  usePurchaseRequestsPaged,
+  useSupplierInvoicesPaged,
+  usePurchaseRequestItems,
+  usePurchaseOrderItems,
+  useDeliveryNoteItems,
+  useSupplierInvoiceItems,
   useUpdateDeliveryNote,
   useUpdatePurchaseOrder,
   useUpdatePurchaseRequest,
@@ -1020,6 +1024,11 @@ function SupplierInvoiceForm({
 
 export function AchatsPage() {
   const { t } = useTranslation();
+  const pageSize = 25;
+  const [reqPage, setReqPage] = useState(1);
+  const [ordPage, setOrdPage] = useState(1);
+  const [delPage, setDelPage] = useState(1);
+  const [invPage, setInvPage] = useState(1);
   const [requestOpen, setRequestOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
@@ -1028,10 +1037,18 @@ export function AchatsPage() {
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [editingDelivery, setEditingDelivery] = useState<DeliveryNote | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<SupplierInvoice | null>(null);
-  const { data: requests = [], isLoading: loadingRequests } = usePurchaseRequests();
-  const { data: orders = [], isLoading: loadingOrders } = usePurchaseOrders();
-  const { data: deliveries = [], isLoading: loadingDeliveries } = useDeliveryNotes();
-  const { data: invoices = [], isLoading: loadingInvoices } = useSupplierInvoices();
+  const { data: reqRes, isLoading: loadingRequests } = usePurchaseRequestsPaged(reqPage, pageSize);
+  const { data: ordRes, isLoading: loadingOrders } = usePurchaseOrdersPaged(ordPage, pageSize);
+  const { data: delRes, isLoading: loadingDeliveries } = useDeliveryNotesPaged(delPage, pageSize);
+  const { data: invRes, isLoading: loadingInvoices } = useSupplierInvoicesPaged(invPage, pageSize);
+  const requests = reqRes?.data || [];
+  const orders = ordRes?.data || [];
+  const deliveries = delRes?.data || [];
+  const invoices = invRes?.data || [];
+  const totalRequests = reqRes?.count || 0;
+  const totalOrders = ordRes?.count || 0;
+  const totalDeliveries = delRes?.count || 0;
+  const totalInvoices = invRes?.count || 0;
   const createRequest = useCreatePurchaseRequest();
   const updateRequest = useUpdatePurchaseRequest();
   const deleteRequest = useDeletePurchaseRequest();
@@ -1044,6 +1061,10 @@ export function AchatsPage() {
   const createInvoice = useCreateSupplierInvoice();
   const updateInvoice = useUpdateSupplierInvoice();
   const deleteInvoice = useDeleteSupplierInvoice();
+  const { data: editingRequestItems = [] } = usePurchaseRequestItems(editingRequest?.id || null);
+  const { data: editingOrderItems = [] } = usePurchaseOrderItems(editingOrder?.id || null);
+  const { data: editingDeliveryItems = [] } = useDeliveryNoteItems(editingDelivery?.id || null);
+  const { data: editingInvoiceItems = [] } = useSupplierInvoiceItems(editingInvoice?.id || null);
 
   const requestStatusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
     draft: 'secondary',
@@ -1105,7 +1126,7 @@ export function AchatsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">Demandes d’achat</h2>
-                  <p className="text-sm text-muted-foreground">{requests.length} demande(s)</p>
+                  <p className="text-sm text-muted-foreground">{totalRequests} demande(s)</p>
                 </div>
                 <Button onClick={() => { setEditingRequest(null); setRequestOpen(true); }}>
                   <Plus className="w-4 h-4 mr-2" />
@@ -1178,13 +1199,34 @@ export function AchatsPage() {
                         ))}
                       </TableBody>
                     </Table>
+                    <div className="flex items-center justify-between p-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setReqPage((p) => Math.max(1, p - 1))}
+                        disabled={reqPage === 1}
+                      >
+                        Précédent
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        Page {reqPage} / {Math.max(1, Math.ceil(totalRequests / pageSize))}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setReqPage((p) => p + 1)}
+                        disabled={reqPage * pageSize >= totalRequests}
+                      >
+                        Suivant
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}
               <PurchaseRequestForm
                 open={requestOpen}
                 onOpenChange={setRequestOpen}
-                request={editingRequest}
+                request={editingRequest ? { ...editingRequest, items: editingRequestItems } : null}
                 onSubmit={(values) => {
                   const totalAmount = calculateItemsTotal(values.items);
                   if (editingRequest) {
@@ -1240,7 +1282,7 @@ export function AchatsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">Bons de commandes</h2>
-                  <p className="text-sm text-muted-foreground">{orders.length} bon(s)</p>
+                  <p className="text-sm text-muted-foreground">{totalOrders} bon(s)</p>
                 </div>
                 <Button onClick={() => { setEditingOrder(null); setOrderOpen(true); }}>
                   <Plus className="w-4 h-4 mr-2" />
@@ -1311,13 +1353,34 @@ export function AchatsPage() {
                         ))}
                       </TableBody>
                     </Table>
+                    <div className="flex items-center justify-between p-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setOrdPage((p) => Math.max(1, p - 1))}
+                        disabled={ordPage === 1}
+                      >
+                        Précédent
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        Page {ordPage} / {Math.max(1, Math.ceil(totalOrders / pageSize))}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setOrdPage((p) => p + 1)}
+                        disabled={ordPage * pageSize >= totalOrders}
+                      >
+                        Suivant
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}
               <PurchaseOrderForm
                 open={orderOpen}
                 onOpenChange={setOrderOpen}
-                order={editingOrder}
+                order={editingOrder ? { ...editingOrder, items: editingOrderItems } : null}
                 onSubmit={(values) => {
                   const subtotal = calculateItemsTotal(values.items);
                   const taxAmount = subtotal * (Number(values.tax_rate) / 100);
@@ -1379,7 +1442,7 @@ export function AchatsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">Bons de livraisons</h2>
-                  <p className="text-sm text-muted-foreground">{deliveries.length} bon(s)</p>
+                  <p className="text-sm text-muted-foreground">{totalDeliveries} bon(s)</p>
                 </div>
                 <Button onClick={() => { setEditingDelivery(null); setDeliveryOpen(true); }}>
                   <Plus className="w-4 h-4 mr-2" />
@@ -1450,13 +1513,34 @@ export function AchatsPage() {
                         ))}
                       </TableBody>
                     </Table>
+                    <div className="flex items-center justify-between p-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDelPage((p) => Math.max(1, p - 1))}
+                        disabled={delPage === 1}
+                      >
+                        Précédent
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        Page {delPage} / {Math.max(1, Math.ceil(totalDeliveries / pageSize))}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDelPage((p) => p + 1)}
+                        disabled={delPage * pageSize >= totalDeliveries}
+                      >
+                        Suivant
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}
               <DeliveryNoteForm
                 open={deliveryOpen}
                 onOpenChange={setDeliveryOpen}
-                note={editingDelivery}
+                note={editingDelivery ? { ...editingDelivery, items: editingDeliveryItems } : null}
                 onSubmit={(values) => {
                   const totalAmount = calculateItemsTotal(values.items);
                   if (editingDelivery) {
@@ -1510,7 +1594,7 @@ export function AchatsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">Factures fournisseurs</h2>
-                  <p className="text-sm text-muted-foreground">{invoices.length} facture(s)</p>
+                  <p className="text-sm text-muted-foreground">{totalInvoices} facture(s)</p>
                 </div>
                 <Button onClick={() => { setEditingInvoice(null); setInvoiceOpen(true); }}>
                   <Plus className="w-4 h-4 mr-2" />
@@ -1581,13 +1665,34 @@ export function AchatsPage() {
                         ))}
                       </TableBody>
                     </Table>
+                    <div className="flex items-center justify-between p-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setInvPage((p) => Math.max(1, p - 1))}
+                        disabled={invPage === 1}
+                      >
+                        Précédent
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        Page {invPage} / {Math.max(1, Math.ceil(totalInvoices / pageSize))}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setInvPage((p) => p + 1)}
+                        disabled={invPage * pageSize >= totalInvoices}
+                      >
+                        Suivant
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}
               <SupplierInvoiceForm
                 open={invoiceOpen}
                 onOpenChange={setInvoiceOpen}
-                invoice={editingInvoice}
+                invoice={editingInvoice ? { ...editingInvoice, items: editingInvoiceItems } : null}
                 onSubmit={(values) => {
                   const subtotal = calculateItemsTotal(values.items);
                   const taxAmount = subtotal * (Number(values.tax_rate) / 100);

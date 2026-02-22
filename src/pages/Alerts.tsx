@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useGPSwoxAlerts, GPSwoxAlert } from '@/hooks/useGPSwoxAlerts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,6 +39,9 @@ import {
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useRevisionAlerts, useAcknowledgeRevisionAlert, RevisionAlert } from '@/hooks/useRevisions';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 const alertTypeConfig = {
   speed: { icon: Gauge, label: 'Excès de vitesse', color: 'text-destructive', bg: 'bg-destructive/10' },
@@ -60,8 +63,12 @@ export default function Alerts() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
+  const { data: revData = [], isLoading: revLoading } = useRevisionAlerts();
+  const ackMutation = useAcknowledgeRevisionAlert();
+  const queryClient = useQueryClient();
 
   const alerts = data?.alerts || [];
+  const revAlerts = revData as RevisionAlert[];
 
   const filteredAlerts = useMemo(() => {
     return alerts.filter((alert) => {
@@ -83,6 +90,28 @@ export default function Alerts() {
     const acknowledged = acknowledgedIds.size;
     return { total, high, medium, acknowledged };
   }, [alerts, acknowledgedIds]);
+
+  const filteredRevisionAlerts = useMemo(() => {
+    return revAlerts.filter((a) => {
+      const matchesSearch =
+        !search ||
+        a.vehicle_plate.toLowerCase().includes(search.toLowerCase()) ||
+        a.message.toLowerCase().includes(search.toLowerCase());
+      return matchesSearch;
+    });
+  }, [revAlerts, search]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel('rev_alerts_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'revision_alerts' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['revision_alerts'] });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [queryClient]);
 
   const handleAcknowledge = (id: string) => {
     setAcknowledgedIds((prev) => {
@@ -237,6 +266,113 @@ export default function Alerts() {
                 </SelectContent>
               </Select>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Wrench className="w-4 h-4 text-warning" />
+              Alertes Révisions ({filteredRevisionAlerts.length})
+              {revLoading && (
+                <span className="text-xs text-muted-foreground font-normal ml-2">
+                  Mise à jour...
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {revLoading ? (
+              <div className="p-6 space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : filteredRevisionAlerts.length === 0 ? (
+              <div className="p-12 text-center">
+                <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-3" />
+                <p className="text-muted-foreground font-medium">Aucune alerte révision</p>
+                <p className="text-sm text-muted-foreground/70">
+                  Tout fonctionne normalement
+                </p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Statut</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Mode</TableHead>
+                    <TableHead>Véhicule</TableHead>
+                    <TableHead className="min-w-[250px]">Message</TableHead>
+                    <TableHead>Date / Heure</TableHead>
+                    <TableHead className="w-[100px] text-center">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredRevisionAlerts.map((a) => {
+                    const sev = a.status === 'overdue' ? severityConfig.high : severityConfig.medium;
+                    const isAcked = a.ack;
+                    return (
+                      <TableRow key={a.id} className={cn(isAcked && 'opacity-50')}>
+                        <TableCell>
+                          <Badge variant={sev.variant} className="text-[10px] px-1.5">
+                            {a.status === 'overdue' ? 'En retard' : 'À faire'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-xs font-medium">{a.type}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-xs">{a.mode === 'days' ? 'Par jours' : 'Par kilométrage'}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-medium text-sm">{a.vehicle_plate}</span>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm text-foreground">{a.message}</p>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs">
+                            <p className="text-foreground">
+                              {(() => {
+                                try {
+                                  return format(new Date(a.triggered_at), 'dd/MM/yyyy HH:mm', { locale: fr });
+                                } catch {
+                                  return a.triggered_at;
+                                }
+                              })()}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {(() => {
+                                try {
+                                  return formatDistanceToNow(new Date(a.triggered_at), {
+                                    addSuffix: true,
+                                    locale: fr,
+                                  });
+                                } catch {
+                                  return '';
+                                }
+                              })()}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            variant={isAcked ? 'secondary' : 'outline'}
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => ackMutation.mutate({ id: a.id, ack: !isAcked })}
+                          >
+                            {isAcked ? 'Annuler' : 'Acquitter'}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 
