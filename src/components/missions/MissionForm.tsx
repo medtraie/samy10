@@ -30,6 +30,7 @@ import { Mission } from '@/lib/mock-data';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useGPSwoxGeofences } from '@/hooks/useGPSwoxGeofences';
+import { useTMSClients } from '@/hooks/useTMS';
 
 const missionSchema = z.object({
   client: z.string().min(1, 'Client requis'),
@@ -42,6 +43,12 @@ const missionSchema = z.object({
   driverId: z.string().min(1, 'Chauffeur requis'),
   cargo: z.string().min(1, 'Description cargaison requise'),
   weight: z.coerce.number().min(1, 'Poids requis'),
+  fuelQuantity: z.coerce.number().min(0, 'Quantité requise'),
+  pricePerLiter: z.coerce.number().min(0, 'Prix requis'),
+  cashAmount: z.coerce.number().min(0, 'Montant requis'),
+  extraFees: z.coerce.number().min(0, 'Frais requis'),
+  discountRate: z.coerce.number().min(0, 'Remise requise'),
+  taxRate: z.coerce.number().min(0, 'TVA requise'),
   notes: z.string().optional(),
 });
 
@@ -51,7 +58,7 @@ interface MissionFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mission?: Mission;
-  onSubmit: (data: MissionFormData) => void;
+  onSubmit: (data: MissionFormData & { totalCost: number; fuelCost: number; discountAmount: number; taxAmount: number }) => void;
 }
 
 export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFormProps) {
@@ -63,14 +70,20 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
       client: mission.client,
       origin: mission.origin,
       destination: mission.destination,
-      departureDate: mission.departureDate.split('T')[0],
-      departureTime: mission.departureDate.split('T')[1]?.substring(0, 5) || '08:00',
-      estimatedArrivalTime: mission.estimatedArrival.split('T')[1]?.substring(0, 5) || '12:00',
+      departureDate: mission.departureDate ? mission.departureDate.split('T')[0] : new Date().toISOString().split('T')[0],
+      departureTime: mission.departureDate && mission.departureDate.includes('T') ? mission.departureDate.split('T')[1]?.substring(0, 5) || '08:00' : '08:00',
+      estimatedArrivalTime: mission.estimatedArrival && mission.estimatedArrival.includes('T') ? mission.estimatedArrival.split('T')[1]?.substring(0, 5) || '12:00' : '12:00',
       vehicleId: mission.vehicleId,
       driverId: mission.driverId,
       cargo: mission.cargo,
       weight: mission.weight,
-      notes: '',
+      fuelQuantity: mission.fuelQuantity,
+      pricePerLiter: mission.pricePerLiter ?? 12.5,
+      cashAmount: mission.cashAmount,
+      extraFees: mission.extraFees,
+      discountRate: mission.discountRate ?? 0,
+      taxRate: mission.taxRate ?? 20,
+      notes: mission.notes || '',
     } : {
       client: '',
       origin: '',
@@ -82,6 +95,12 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
       driverId: '',
       cargo: '',
       weight: 0,
+      fuelQuantity: 0,
+      pricePerLiter: 12.5,
+      cashAmount: 0,
+      extraFees: 0,
+      discountRate: 0,
+      taxRate: 20,
       notes: '',
     },
   });
@@ -93,9 +112,23 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
   const availableDrivers = drivers.filter(d => d.status === 'available' || d.status === 'on_mission');
   // Fetch geofences from GPSwox
   const { data: geofences = [], isLoading: geofencesLoading } = useGPSwoxGeofences();
+  const { data: clients = [], isLoading: clientsLoading } = useTMSClients();
+
+  const cashAmount = form.watch('cashAmount');
+  const extraFees = form.watch('extraFees');
+  const fuelQuantity = form.watch('fuelQuantity');
+  const pricePerLiter = form.watch('pricePerLiter');
+  const discountRate = form.watch('discountRate');
+  const taxRate = form.watch('taxRate');
+  const fuelCost = (Number(fuelQuantity) || 0) * (Number(pricePerLiter) || 0);
+  const baseCost = (Number(cashAmount) || 0) + (Number(extraFees) || 0) + fuelCost;
+  const discountAmount = baseCost * ((Number(discountRate) || 0) / 100);
+  const afterDiscount = Math.max(baseCost - discountAmount, 0);
+  const taxAmount = afterDiscount * ((Number(taxRate) || 0) / 100);
+  const totalCost = afterDiscount + taxAmount;
 
   const handleSubmit = (data: MissionFormData) => {
-    onSubmit(data);
+    onSubmit({ ...data, totalCost, fuelCost, discountAmount, taxAmount });
     form.reset();
     onOpenChange(false);
   };
@@ -117,9 +150,28 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Client</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Nom du client" {...field} />
-                  </FormControl>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner un client" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.name}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="Autre">Autre / Nouveau</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {form.watch('client') === 'Autre' && (
+                    <Input
+                      placeholder="Nom du client"
+                      className="mt-2"
+                      onChange={(e) => field.onChange(e.target.value)}
+                    />
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -218,7 +270,7 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="departureDate"
@@ -362,6 +414,117 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                   </FormItem>
                 )}
               />
+            </div>
+
+            <div className="grid grid-cols-4 gap-4">
+              <FormField
+                control={form.control}
+                name="fuelQuantity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Quantité carburant (L)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" placeholder="0" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="pricePerLiter"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Prix/L (MAD)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" placeholder="12.50" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="cashAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Montant remis (MAD)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" placeholder="0" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="extraFees"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Frais supplémentaires (MAD)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" placeholder="0" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <FormField
+                control={form.control}
+                name="discountRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Remise (%)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" placeholder="0" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="taxRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>TVA (%)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" placeholder="20" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="p-4 bg-muted rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Coût total</span>
+                <span className="text-2xl font-bold text-primary">
+                  {totalCost.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                </span>
+              </div>
+              <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>Carburant</span>
+                  <span>{fuelCost.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Remise</span>
+                  <span>{discountAmount.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>TVA</span>
+                  <span>{taxAmount.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Total</span>
+                  <span>{totalCost.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+                </div>
+              </div>
             </div>
 
             <FormField

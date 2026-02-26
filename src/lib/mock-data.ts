@@ -50,6 +50,17 @@ export interface Mission {
   estimatedArrival: string;
   cargo: string;
   weight: number;
+  fuelQuantity: number;
+  pricePerLiter: number;
+  fuelCost: number;
+  discountRate: number;
+  discountAmount: number;
+  taxRate: number;
+  taxAmount: number;
+  cashAmount: number;
+  extraFees: number;
+  totalCost: number;
+  notes?: string;
 }
 
 export interface Alert {
@@ -259,11 +270,11 @@ export const mockDrivers: Driver[] = [
 
 // Mock Missions
 export const mockMissions: Mission[] = [
-  { id: 'm1', reference: 'MIS-2024-001', client: 'Marjane Distribution', origin: 'Casablanca', destination: 'Rabat', status: 'in_progress', vehicleId: 'v1', driverId: 'd1', departureDate: '2024-01-15T08:00:00', estimatedArrival: '2024-01-15T11:00:00', cargo: 'Produits alimentaires', weight: 12500 },
-  { id: 'm2', reference: 'MIS-2024-002', client: 'Label\'Vie', origin: 'Rabat', destination: 'Fès', status: 'in_progress', vehicleId: 'v2', driverId: 'd2', departureDate: '2024-01-15T07:30:00', estimatedArrival: '2024-01-15T12:30:00', cargo: 'Électroménager', weight: 8200 },
-  { id: 'm3', reference: 'MIS-2024-003', client: 'Bricoma', origin: 'Marrakech', destination: 'Agadir', status: 'planned', vehicleId: 'v4', driverId: 'd3', departureDate: '2024-01-16T06:00:00', estimatedArrival: '2024-01-16T10:00:00', cargo: 'Matériaux construction', weight: 18000 },
-  { id: 'm4', reference: 'MIS-2024-004', client: 'Kitea', origin: 'Tanger', destination: 'Tétouan', status: 'in_progress', vehicleId: 'v5', driverId: 'd4', departureDate: '2024-01-15T09:00:00', estimatedArrival: '2024-01-15T10:30:00', cargo: 'Meubles', weight: 3500 },
-  { id: 'm5', reference: 'MIS-2024-005', client: 'Aswak Assalam', origin: 'Casablanca', destination: 'El Jadida', status: 'delivered', vehicleId: 'v1', driverId: 'd1', departureDate: '2024-01-14T14:00:00', estimatedArrival: '2024-01-14T16:30:00', cargo: 'Produits frais', weight: 9800 },
+  { id: 'm1', reference: 'MIS-2024-001', client: 'Marjane Distribution', origin: 'Casablanca', destination: 'Rabat', status: 'in_progress', vehicleId: 'v1', driverId: 'd1', departureDate: '2024-01-15T08:00:00', estimatedArrival: '2024-01-15T11:00:00', cargo: 'Produits alimentaires', weight: 12500, fuelQuantity: 0, pricePerLiter: 12.5, fuelCost: 0, discountRate: 0, discountAmount: 0, taxRate: 20, taxAmount: 0, cashAmount: 0, extraFees: 0, totalCost: 0 },
+  { id: 'm2', reference: 'MIS-2024-002', client: 'Label\'Vie', origin: 'Rabat', destination: 'Fès', status: 'in_progress', vehicleId: 'v2', driverId: 'd2', departureDate: '2024-01-15T07:30:00', estimatedArrival: '2024-01-15T12:30:00', cargo: 'Électroménager', weight: 8200, fuelQuantity: 0, pricePerLiter: 12.5, fuelCost: 0, discountRate: 0, discountAmount: 0, taxRate: 20, taxAmount: 0, cashAmount: 0, extraFees: 0, totalCost: 0 },
+  { id: 'm3', reference: 'MIS-2024-003', client: 'Bricoma', origin: 'Marrakech', destination: 'Agadir', status: 'planned', vehicleId: 'v4', driverId: 'd3', departureDate: '2024-01-16T06:00:00', estimatedArrival: '2024-01-16T10:00:00', cargo: 'Matériaux construction', weight: 18000, fuelQuantity: 0, pricePerLiter: 12.5, fuelCost: 0, discountRate: 0, discountAmount: 0, taxRate: 20, taxAmount: 0, cashAmount: 0, extraFees: 0, totalCost: 0 },
+  { id: 'm4', reference: 'MIS-2024-004', client: 'Kitea', origin: 'Tanger', destination: 'Tétouan', status: 'in_progress', vehicleId: 'v5', driverId: 'd4', departureDate: '2024-01-15T09:00:00', estimatedArrival: '2024-01-15T10:30:00', cargo: 'Meubles', weight: 3500, fuelQuantity: 0, pricePerLiter: 12.5, fuelCost: 0, discountRate: 0, discountAmount: 0, taxRate: 20, taxAmount: 0, cashAmount: 0, extraFees: 0, totalCost: 0 },
+  { id: 'm5', reference: 'MIS-2024-005', client: 'Aswak Assalam', origin: 'Casablanca', destination: 'El Jadida', status: 'delivered', vehicleId: 'v1', driverId: 'd1', departureDate: '2024-01-14T14:00:00', estimatedArrival: '2024-01-14T16:30:00', cargo: 'Produits frais', weight: 9800, fuelQuantity: 320, pricePerLiter: 12.5, fuelCost: 4000, discountRate: 5, discountAmount: 400, taxRate: 20, taxAmount: 780, cashAmount: 4000, extraFees: 300, totalCost: 5180 },
 ];
 
 // Mock Alerts

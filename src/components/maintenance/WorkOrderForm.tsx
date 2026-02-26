@@ -27,13 +27,16 @@ import {
 } from '@/components/ui/dialog';
 import { WorkOrder } from '@/lib/mock-data';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
+import { getStockItems } from '@/services/stockService';
+import { StockItem } from '@/types/stock';
 
 const partSchema = z.object({
   name: z.string().min(1, 'Nom requis'),
   quantity: z.coerce.number().min(1, 'Quantité requise'),
   unitPrice: z.coerce.number().min(0, 'Prix requis'),
+  stockItemId: z.string().optional().nullable(),
 });
 
 const workOrderSchema = z.object({
@@ -60,6 +63,7 @@ interface WorkOrderFormProps {
 
 export function WorkOrderForm({ open, onOpenChange, workOrder, onSubmit }: WorkOrderFormProps) {
   const isEditing = !!workOrder;
+  const [internalStockItems, setInternalStockItems] = useState<StockItem[]>([]);
   
   // Fetch real vehicles from GPSwox
   const { data: gpswoxVehicles = [], isLoading: vehiclesLoading } = useGPSwoxVehicles();
@@ -96,7 +100,10 @@ export function WorkOrderForm({ open, onOpenChange, workOrder, onSubmit }: WorkO
         garage: workOrder.garage || '',
         scheduledDate: workOrder.scheduledDate,
         laborCost: workOrder.laborCost,
-        parts: workOrder.parts,
+        parts: workOrder.parts.map((p) => ({
+          ...p,
+          stockItemId: null,
+        })),
         notes: workOrder.notes || '',
       });
     } else {
@@ -114,6 +121,22 @@ export function WorkOrderForm({ open, onOpenChange, workOrder, onSubmit }: WorkO
       });
     }
   }, [workOrder, form]);
+
+  useEffect(() => {
+    const loadInternalStock = async () => {
+      try {
+        const items = await getStockItems();
+        const internal = items.filter((item) => item.stock_type === 'internal');
+        setInternalStockItems(internal);
+      } catch (error) {
+        console.error('Error loading internal stock items', error);
+      }
+    };
+
+    if (open) {
+      loadInternalStock();
+    }
+  }, [open]);
 
   const parts = form.watch('parts');
   const laborCost = form.watch('laborCost') || 0;
@@ -313,7 +336,39 @@ export function WorkOrderForm({ open, onOpenChange, workOrder, onSubmit }: WorkO
               </div>
               {fields.map((field, index) => (
                 <div key={field.id} className="grid grid-cols-12 gap-2 mb-2">
-                  <div className="col-span-5">
+                  <div className="col-span-4">
+                    <FormField
+                      control={form.control}
+                      name={`parts.${index}.stockItemId`}
+                      render={({ field: stockField }) => (
+                        <Select
+                          value={stockField.value || ''}
+                          onValueChange={(value) => {
+                            stockField.onChange(value);
+                            const selected = internalStockItems.find((item) => item.id === value);
+                            if (selected) {
+                              form.setValue(`parts.${index}.name`, selected.name);
+                              form.setValue(`parts.${index}.unitPrice`, selected.unit_price);
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Stock interne" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {internalStockItems.map((item) => (
+                              <SelectItem key={item.id} value={item.id}>
+                                {item.name} ({item.quantity} {item.unit})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                  <div className="col-span-3">
                     <Input
                       placeholder="Nom de la pièce"
                       {...form.register(`parts.${index}.name`)}
@@ -326,14 +381,14 @@ export function WorkOrderForm({ open, onOpenChange, workOrder, onSubmit }: WorkO
                       {...form.register(`parts.${index}.quantity`)}
                     />
                   </div>
-                  <div className="col-span-4">
+                  <div className="col-span-3">
                     <Input
                       type="number"
                       placeholder="Prix unitaire"
                       {...form.register(`parts.${index}.unitPrice`)}
                     />
                   </div>
-                  <div className="col-span-1">
+                  <div className="col-span-12 flex justify-end">
                     <Button
                       type="button"
                       variant="ghost"

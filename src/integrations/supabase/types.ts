@@ -656,10 +656,22 @@ export type Database = {
           created_at: string
           departure_zone: string
           driver_id: string | null
+          cash_amount: number | null
+          extra_fees: number | null
+          fuel_quantity: number | null
+          price_per_liter: number | null
+          fuel_cost: number | null
+          discount_rate: number | null
+          discount_amount: number | null
+          tax_rate: number | null
+          tax_amount: number | null
+          total_before_cap: number | null
+          max_total_cost: number | null
           id: string
           mission_date: string
           notes: string | null
           status: string
+          total_cost: number | null
           updated_at: string
           vehicle_id: string
         }
@@ -668,10 +680,22 @@ export type Database = {
           created_at?: string
           departure_zone: string
           driver_id?: string | null
+          cash_amount?: number | null
+          extra_fees?: number | null
+          fuel_quantity?: number | null
+          price_per_liter?: number | null
+          fuel_cost?: number | null
+          discount_rate?: number | null
+          discount_amount?: number | null
+          tax_rate?: number | null
+          tax_amount?: number | null
+          total_before_cap?: number | null
+          max_total_cost?: number | null
           id?: string
           mission_date: string
           notes?: string | null
           status?: string
+          total_cost?: number | null
           updated_at?: string
           vehicle_id: string
         }
@@ -680,10 +704,22 @@ export type Database = {
           created_at?: string
           departure_zone?: string
           driver_id?: string | null
+          cash_amount?: number | null
+          extra_fees?: number | null
+          fuel_quantity?: number | null
+          price_per_liter?: number | null
+          fuel_cost?: number | null
+          discount_rate?: number | null
+          discount_amount?: number | null
+          tax_rate?: number | null
+          tax_amount?: number | null
+          total_before_cap?: number | null
+          max_total_cost?: number | null
           id?: string
           mission_date?: string
           notes?: string | null
           status?: string
+          total_cost?: number | null
           updated_at?: string
           vehicle_id?: string
         }

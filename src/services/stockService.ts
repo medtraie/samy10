@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { StockItem, StockSupplier, StockTransaction } from "@/types/stock";
+import { StockItem, StockSupplier, StockTransactionWithItem } from "@/types/stock";
 
 // --- Suppliers ---
 
@@ -136,4 +136,74 @@ export const restockItem = async (itemId: string, quantityToAdd: number, notes?:
   if (logError) console.error('Error logging transaction:', logError);
 
   return updatedItem;
+};
+
+export const consumeInternalStock = async (
+  itemId: string,
+  quantityToUse: number,
+  notes?: string
+): Promise<{ updatedItem: StockItem; cost: number }> => {
+  const { data: item, error: fetchError } = await supabase
+    .from('stock_items')
+    .select('*')
+    .eq('id', itemId)
+    .single();
+
+  if (fetchError) throw fetchError;
+  if (!item) throw new Error('Item not found');
+  const stockType = (item as any).stock_type as 'internal' | 'external' | undefined;
+  if (stockType !== 'internal') {
+    throw new Error('Only internal stock can be consumed');
+  }
+
+  const previousQuantity = item.quantity;
+  if (previousQuantity < quantityToUse) {
+    throw new Error('Quantité stock insuffisante');
+  }
+
+  const newQuantity = previousQuantity - quantityToUse;
+
+  const { data: updatedItem, error: updateError } = await supabase
+    .from('stock_items')
+    .update({
+      quantity: newQuantity,
+      last_restocked: item.last_restocked,
+    })
+    .eq('id', itemId)
+    .select()
+    .single();
+
+  if (updateError) throw updateError;
+
+  const { error: logError } = await supabase
+    .from('stock_transactions')
+    .insert([
+      {
+        item_id: itemId,
+        type: 'OUT',
+        quantity: quantityToUse,
+        previous_quantity: previousQuantity,
+        new_quantity: newQuantity,
+        notes,
+      },
+    ]);
+
+  if (logError) console.error('Error logging transaction:', logError);
+
+  const cost = quantityToUse * item.unit_price;
+
+  return { updatedItem: updatedItem as StockItem, cost };
+};
+
+export const getStockTransactions = async (): Promise<StockTransactionWithItem[]> => {
+  const { data, error } = await supabase
+    .from('stock_transactions')
+    .select(`
+      *,
+      item:stock_items(*)
+    `)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return (data || []) as StockTransactionWithItem[];
 };

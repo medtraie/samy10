@@ -8,11 +8,15 @@ interface SupplierCardProps {
   supplier: StockSupplier;
   onEdit?: (supplier: StockSupplier) => void;
   onOrder?: (supplier: StockSupplier) => void;
+   onView?: (supplier: StockSupplier) => void;
 }
 
-export function SupplierCard({ supplier, onEdit, onOrder }: SupplierCardProps) {
+export function SupplierCard({ supplier, onEdit, onOrder, onView }: SupplierCardProps) {
   return (
-    <Card className="hover:shadow-md transition-shadow animate-in fade-in zoom-in-95 duration-300">
+    <Card
+      className="hover:shadow-md transition-shadow animate-in fade-in zoom-in-95 duration-300 cursor-pointer"
+      onClick={() => onView?.(supplier)}
+    >
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -64,11 +68,37 @@ export function SupplierCard({ supplier, onEdit, onOrder }: SupplierCardProps) {
           </div>
         </div>
 
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-background/50 rounded-lg p-2 text-center border border-border/50">
+            <p className="text-xs text-muted-foreground">Dette actuelle</p>
+            <p className="text-lg font-bold text-foreground">
+              {new Intl.NumberFormat('fr-MA').format(supplier.outstandingAmount || 0)} MAD
+            </p>
+          </div>
+          <div className="bg-background/50 rounded-lg p-2 text-center border border-border/50">
+            <p className="text-xs text-muted-foreground">Dernière facture</p>
+            <p className="text-xs font-medium text-foreground">
+              {supplier.lastInvoiceDate
+                ? new Date(supplier.lastInvoiceDate).toLocaleDateString('fr-MA')
+                : 'Aucune'}
+            </p>
+          </div>
+        </div>
+
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1 hover:bg-primary/5" onClick={() => onEdit?.(supplier)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 hover:bg-primary/5"
+            onClick={(e) => { e.stopPropagation(); onEdit?.(supplier); }}
+          >
             Modifier
           </Button>
-          <Button size="sm" className="flex-1 shadow-sm" onClick={() => onOrder?.(supplier)}>
+          <Button
+            size="sm"
+            className="flex-1 shadow-sm"
+            onClick={(e) => { e.stopPropagation(); onOrder?.(supplier); }}
+          >
             Commander
           </Button>
         </div>

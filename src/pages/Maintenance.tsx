@@ -34,11 +34,16 @@ import {
   ClipboardList,
   Loader2,
 } from 'lucide-react';
-import { useMaintenance, useCreateMaintenance, useUpdateMaintenance, 
-  useDeleteMaintenance, 
-  MaintenanceRecord 
+import {
+  useMaintenance,
+  useCreateMaintenance,
+  useUpdateMaintenance,
+  useDeleteMaintenance,
+  MaintenanceRecord,
 } from '@/hooks/useMaintenance';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
+import { consumeInternalStock } from '@/services/stockService';
+import { toast } from 'sonner';
 
 // Map DB maintenance to card format
 interface WorkOrderCardData {
@@ -152,33 +157,71 @@ export default function Maintenance() {
     });
   };
 
-  const handleFormSubmit = (data: any) => {
-    const totalCost = (data.laborCost || 0) + (data.parts || []).reduce((acc: number, p: any) => acc + (p.quantity * p.unitPrice), 0);
+  const handleFormSubmit = async (data: any) => {
+    try {
+      const laborCost = data.laborCost || 0;
+      const parts = data.parts || [];
 
-    if (selectedWorkOrder) {
-      updateMaintenance.mutate({
-        id: selectedWorkOrder.id,
-        maintenance_type: data.description,
-        maintenance_date: data.scheduledDate,
-        vehicle_id: data.vehicleId,
-        cost: totalCost,
-        notes: data.notes,
-      }, {
-        onSuccess: () => refetch(),
-      });
-    } else {
-      createMaintenance.mutate({
-        maintenance_type: data.description,
-        maintenance_date: data.scheduledDate,
-        vehicle_id: data.vehicleId,
-        cost: totalCost,
-        notes: data.notes,
-        status: 'scheduled',
-      }, {
-        onSuccess: () => refetch(),
-      });
+      const stockParts = parts.filter((p: any) => p.stockItemId);
+      const manualParts = parts.filter((p: any) => !p.stockItemId);
+
+      let internalStockCost = 0;
+
+      const vehicle = vehicles.find(v => String(v.id) === data.vehicleId);
+      const vehicleLabel = vehicle?.plate || data.vehicleId;
+
+      for (const part of stockParts) {
+        const quantity = Number(part.quantity) || 0;
+        if (!part.stockItemId || quantity <= 0) continue;
+        const { cost } = await consumeInternalStock(
+          part.stockItemId,
+          quantity,
+          `Maintenance véhicule ${vehicleLabel} - ${data.description}`,
+        );
+        internalStockCost += cost;
+      }
+
+      const manualPartsCost = manualParts.reduce(
+        (acc: number, p: any) => acc + (Number(p.quantity) || 0) * (Number(p.unitPrice) || 0),
+        0,
+      );
+
+      const totalCost = laborCost + internalStockCost + manualPartsCost;
+
+      if (selectedWorkOrder) {
+        updateMaintenance.mutate(
+          {
+            id: selectedWorkOrder.id,
+            maintenance_type: data.description,
+            maintenance_date: data.scheduledDate,
+            vehicle_id: data.vehicleId,
+            cost: totalCost,
+            notes: data.notes,
+          },
+          {
+            onSuccess: () => refetch(),
+          },
+        );
+      } else {
+        createMaintenance.mutate(
+          {
+            maintenance_type: data.description,
+            maintenance_date: data.scheduledDate,
+            vehicle_id: data.vehicleId,
+            cost: totalCost,
+            notes: data.notes,
+            status: 'scheduled',
+          },
+          {
+            onSuccess: () => refetch(),
+          },
+        );
+      }
+      setSelectedWorkOrder(undefined);
+    } catch (error: any) {
+      console.error('Error while saving maintenance with stock consumption', error);
+      toast.error(error?.message || 'Erreur lors de l’enregistrement de la maintenance');
     }
-    setSelectedWorkOrder(undefined);
   };
 
   const openNewForm = () => {

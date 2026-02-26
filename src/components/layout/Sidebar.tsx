@@ -45,6 +45,7 @@ const navItems = [
   { key: 'clients', icon: Users, path: '/clients', module: 'clients' },
   { key: 'revisions', icon: FileText, path: '/revisions', module: 'revisions' },
   { key: 'fuel', icon: Fuel, path: '/fuel', module: 'fuel' },
+  { key: 'oil', icon: Droplets, path: '/oil', module: 'oil' },
   { key: 'citerne', icon: Droplets, path: '/citerne', module: 'citerne' },
   { key: 'maintenance', icon: Wrench, path: '/maintenance', module: 'maintenance' },
   { key: 'stock', icon: Boxes, path: '/stock', module: 'stock' },

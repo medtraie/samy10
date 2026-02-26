@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MissionCard } from '@/components/missions/MissionCard';
 import { MissionForm } from '@/components/missions/MissionForm';
+import { MissionCostPanel } from '@/components/missions/MissionCostPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus,
   Search,
@@ -17,9 +18,15 @@ import {
   FileText,
   TrendingUp,
   Loader2,
+  LayoutGrid,
+  List,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
 import { useMissions, useCreateMission, useUpdateMission, useDeleteMission, Mission as DBMission } from '@/hooks/useMissions';
 import { toast } from '@/hooks/use-toast';
+import { MissionKanban } from '@/components/missions/MissionKanban';
+import { MissionCalendar } from '@/components/missions/MissionCalendar';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const statusFilters = [
   { value: 'all', label: 'Toutes', icon: FileText },
@@ -29,11 +36,37 @@ const statusFilters = [
   { value: 'cancelled', label: 'Annulées', icon: XCircle },
 ];
 
+type MissionNotesPayload = {
+  client: string;
+  notes: string;
+};
+
+const parseMissionNotes = (raw: string | null): MissionNotesPayload => {
+  if (!raw) {
+    return { client: 'Client', notes: '' };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const client = typeof parsed.client === 'string' ? parsed.client : 'Client';
+      const notes = typeof parsed.notes === 'string' ? parsed.notes : '';
+      return { client, notes };
+    }
+  } catch {
+    return { client: raw, notes: '' };
+  }
+  return { client: 'Client', notes: '' };
+};
+
+const buildMissionNotes = (data: { client: string; notes?: string }) =>
+  JSON.stringify({ client: data.client, notes: data.notes || '' });
+
 // Map DB mission to card format
 interface MissionCardData {
   id: string;
   reference: string;
   client: string;
+  notes?: string;
   origin: string;
   destination: string;
   status: 'planned' | 'in_progress' | 'delivered' | 'cancelled';
@@ -43,6 +76,16 @@ interface MissionCardData {
   estimatedArrival: string;
   cargo: string;
   weight: number;
+  fuelQuantity: number;
+  pricePerLiter: number;
+  fuelCost: number;
+  discountRate: number;
+  discountAmount: number;
+  taxRate: number;
+  taxAmount: number;
+  cashAmount: number;
+  extraFees: number;
+  totalCost: number;
 }
 
 function mapDBToCard(m: DBMission): MissionCardData {
@@ -52,26 +95,54 @@ function mapDBToCard(m: DBMission): MissionCardData {
     completed: 'delivered',
     cancelled: 'cancelled',
   };
+  const { client, notes } = parseMissionNotes(m.notes);
+  const cashAmount = m.cash_amount ?? 0;
+  const extraFees = m.extra_fees ?? 0;
+  const pricePerLiter = m.price_per_liter ?? 0;
+  const fuelCost = m.fuel_cost ?? (m.fuel_quantity ?? 0) * pricePerLiter;
+  const discountRate = m.discount_rate ?? 0;
+  const taxRate = m.tax_rate ?? 0;
+  const baseCost = cashAmount + extraFees + fuelCost;
+  const discountAmount = m.discount_amount ?? baseCost * (discountRate / 100);
+  const afterDiscount = Math.max(baseCost - discountAmount, 0);
+  const taxAmount = m.tax_amount ?? afterDiscount * (taxRate / 100);
+  const totalCost = m.total_cost ?? afterDiscount + taxAmount;
+  const safeDate = m.mission_date ? new Date(m.mission_date).toISOString() : new Date().toISOString();
   return {
     id: m.id,
     reference: `MIS-${m.id.substring(0, 8).toUpperCase()}`,
-    client: m.notes || 'Client',
-    origin: m.departure_zone,
-    destination: m.arrival_zone,
+    client,
+    notes,
+    origin: m.departure_zone || 'Non défini',
+    destination: m.arrival_zone || 'Non défini',
     status: statusMap[m.status] || 'planned',
-    vehicleId: m.vehicle_id,
+    vehicleId: m.vehicle_id || '',
     driverId: m.driver_id || '',
-    departureDate: m.mission_date,
-    estimatedArrival: m.mission_date,
+    departureDate: safeDate,
+    estimatedArrival: safeDate,
     cargo: 'Marchandise',
     weight: 1000,
+    fuelQuantity: m.fuel_quantity ?? 0,
+    pricePerLiter,
+    fuelCost,
+    discountRate,
+    discountAmount,
+    taxRate,
+    taxAmount,
+    cashAmount,
+    extraFees,
+    totalCost,
   };
 }
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('fr-MA', { minimumFractionDigits: 0 }).format(amount) + ' MAD';
 
 export default function Missions() {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('list');
   const [formOpen, setFormOpen] = useState(false);
   const [selectedMission, setSelectedMission] = useState<MissionCardData | undefined>();
 
@@ -79,6 +150,15 @@ export default function Missions() {
   const createMission = useCreateMission();
   const updateMission = useUpdateMission();
   const deleteMission = useDeleteMission();
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    missions
+      .filter((m) => m.status === 'pending' && m.mission_date < today)
+      .forEach((m) => {
+        updateMission.mutate({ id: m.id, status: 'completed' });
+      });
+  }, [missions, updateMission]);
 
   const mappedMissions = missions.map(mapDBToCard);
 
@@ -107,6 +187,7 @@ export default function Missions() {
     planned: mappedMissions.filter(m => m.status === 'planned').length,
     delivered: mappedMissions.filter(m => m.status === 'delivered').length,
     totalWeight: mappedMissions.filter(m => m.status !== 'cancelled').reduce((acc, m) => acc + m.weight, 0),
+    deliveredCost: missions.filter(m => m.status === 'completed').reduce((acc, m) => acc + (m.total_cost || 0), 0),
   };
 
   const handleView = (mission: MissionCardData) => {
@@ -131,6 +212,12 @@ export default function Missions() {
   };
 
   const handleFormSubmit = (data: any) => {
+    const fuelCost = Number(data.fuelCost) || (Number(data.fuelQuantity) || 0) * (Number(data.pricePerLiter) || 0);
+    const baseCost = (Number(data.cashAmount) || 0) + (Number(data.extraFees) || 0) + fuelCost;
+    const discountAmount = Number(data.discountAmount) || baseCost * ((Number(data.discountRate) || 0) / 100);
+    const afterDiscount = Math.max(baseCost - discountAmount, 0);
+    const taxAmount = Number(data.taxAmount) || afterDiscount * ((Number(data.taxRate) || 0) / 100);
+    const totalCost = Number(data.totalCost) || afterDiscount + taxAmount;
     if (selectedMission) {
       updateMission.mutate({
         id: selectedMission.id,
@@ -139,7 +226,17 @@ export default function Missions() {
         mission_date: data.departureDate,
         vehicle_id: data.vehicleId,
         driver_id: data.driverId || null,
-        notes: data.client,
+        notes: buildMissionNotes({ client: data.client, notes: data.notes }),
+        fuel_quantity: Number(data.fuelQuantity) || 0,
+        price_per_liter: Number(data.pricePerLiter) || 0,
+        fuel_cost: fuelCost,
+        cash_amount: Number(data.cashAmount) || 0,
+        extra_fees: Number(data.extraFees) || 0,
+        discount_rate: Number(data.discountRate) || 0,
+        discount_amount: discountAmount,
+        tax_rate: Number(data.taxRate) || 0,
+        tax_amount: taxAmount,
+        total_cost: totalCost,
       }, {
         onSuccess: () => refetch(),
       });
@@ -150,8 +247,18 @@ export default function Missions() {
         mission_date: data.departureDate,
         vehicle_id: data.vehicleId,
         driver_id: data.driverId || null,
-        notes: data.client,
+        notes: buildMissionNotes({ client: data.client, notes: data.notes }),
         status: 'pending',
+        fuel_quantity: Number(data.fuelQuantity) || 0,
+        price_per_liter: Number(data.pricePerLiter) || 0,
+        fuel_cost: fuelCost,
+        cash_amount: Number(data.cashAmount) || 0,
+        extra_fees: Number(data.extraFees) || 0,
+        discount_rate: Number(data.discountRate) || 0,
+        discount_amount: discountAmount,
+        tax_rate: Number(data.taxRate) || 0,
+        tax_amount: taxAmount,
+        total_cost: totalCost,
       }, {
         onSuccess: () => refetch(),
       });
@@ -184,8 +291,9 @@ export default function Missions() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
+      <ErrorBoundary>
+        <div className="space-y-6">
+          {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">{t('nav.missions')}</h1>
@@ -198,7 +306,7 @@ export default function Missions() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -264,58 +372,121 @@ export default function Missions() {
               </div>
             </CardContent>
           </Card>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher une mission..."
-              className="pl-10"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-            <TabsList>
-              {statusFilters.map((filter) => (
-                <TabsTrigger key={filter.value} value={filter.value} className="gap-2">
-                  <filter.icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{filter.label}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
-
-        {/* Missions Grid */}
-        {filteredMissions.length === 0 ? (
           <Card>
-            <CardContent className="py-12 text-center">
-              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="font-medium text-foreground mb-1">Aucune mission trouvée</h3>
-              <p className="text-sm text-muted-foreground">
-                {searchQuery || statusFilter !== 'all'
-                  ? 'Essayez de modifier vos critères de recherche'
-                  : 'Créez votre première mission de transport'}
-              </p>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                  <TrendingUp className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">
+                    {(stats.deliveredCost / 1000).toFixed(1)}k
+                  </p>
+                  <p className="text-xs text-muted-foreground">Coût missions livrées (MAD)</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filteredMissions.map((mission) => (
-              <MissionCard
-                key={mission.id}
-                mission={mission}
-                onView={handleView}
-                onEdit={handleEdit}
-                onStatusChange={handleStatusChange}
-                onDelete={handleDelete}
-              />
-            ))}
+        </div>
+
+        {/* Main Content Tabs */}
+        <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <TabsList>
+              <TabsTrigger value="list" className="gap-2">
+                <List className="h-4 w-4" />
+                Liste
+              </TabsTrigger>
+              <TabsTrigger value="kanban" className="gap-2">
+                <LayoutGrid className="h-4 w-4" />
+                Kanban
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="gap-2">
+                <CalendarIcon className="h-4 w-4" />
+                Calendrier
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Analytique
+              </TabsTrigger>
+            </TabsList>
+
+            {viewMode === 'list' && (
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Rechercher..."
+                    className="pl-10"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+                  <TabsList>
+                    <TabsTrigger value="all">Toutes</TabsTrigger>
+                    <TabsTrigger value="pending">Planifiées</TabsTrigger>
+                    <TabsTrigger value="in_progress">En cours</TabsTrigger>
+                    <TabsTrigger value="completed">Livrées</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+            )}
           </div>
-        )}
+
+          <TabsContent value="list" className="space-y-4">
+            {filteredMissions.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="font-medium text-foreground mb-1">Aucune mission trouvée</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {searchQuery || statusFilter !== 'all'
+                      ? 'Essayez de modifier vos critères de recherche'
+                      : 'Créez votre première mission de transport'}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredMissions.map((mission) => (
+                  <MissionCard
+                    key={mission.id}
+                    mission={mission}
+                    onView={handleView}
+                    onEdit={handleEdit}
+                    onStatusChange={handleStatusChange}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="kanban">
+            <MissionKanban
+              missions={filteredMissions} // Can apply filters to kanban too if desired, or use mappedMissions for full view
+              onView={handleView}
+              onEdit={handleEdit}
+              onStatusChange={handleStatusChange}
+              onDelete={handleDelete}
+            />
+          </TabsContent>
+
+          <TabsContent value="calendar">
+            <MissionCalendar
+              missions={mappedMissions}
+              onView={handleView}
+              onEdit={handleEdit}
+              onStatusChange={handleStatusChange}
+              onDelete={handleDelete}
+            />
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <MissionCostPanel missions={missions} />
+          </TabsContent>
+        </Tabs>
 
         {/* Mission Form Dialog */}
         <MissionForm
@@ -325,6 +496,7 @@ export default function Missions() {
           onSubmit={handleFormSubmit}
         />
       </div>
+      </ErrorBoundary>
     </DashboardLayout>
   );
 }

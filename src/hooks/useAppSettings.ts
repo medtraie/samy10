@@ -15,6 +15,7 @@ export interface ModuleSettings {
   transport_tms: boolean;
   fuel: boolean;
   citerne: boolean;
+   oil: boolean;
   maintenance: boolean;
   stock: boolean;
   achats: boolean;
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: ModuleSettings = {
   transport_tms: true,
   fuel: true,
   citerne: true,
+  oil: true,
   maintenance: true,
   stock: true,
   achats: true,

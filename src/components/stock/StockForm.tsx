@@ -39,6 +39,7 @@ const stockSchema = z.object({
   unit_price: z.coerce.number().min(0, 'Prix invalide'),
   supplier_id: z.string().min(1, 'Fournisseur requis'),
   location: z.string().min(1, 'Emplacement requis'),
+  stock_type: z.enum(['internal', 'external']).default('external'),
 });
 
 type StockFormData = z.infer<typeof stockSchema>;
@@ -47,10 +48,11 @@ interface StockFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   stockItem?: StockItem;
+  categories: { value: string; label: string }[];
   onSubmit: (data: any) => void;
 }
 
-export function StockForm({ open, onOpenChange, stockItem, onSubmit }: StockFormProps) {
+export function StockForm({ open, onOpenChange, stockItem, categories, onSubmit }: StockFormProps) {
   const isEditing = !!stockItem;
   const [suppliers, setSuppliers] = useState<StockSupplier[]>([]);
 
@@ -75,13 +77,14 @@ export function StockForm({ open, onOpenChange, stockItem, onSubmit }: StockForm
     defaultValues: {
       name: stockItem?.name || '',
       reference: stockItem?.reference || '',
-      category: stockItem?.category || 'pieces',
+      category: stockItem?.category || categories[0]?.value || 'pieces',
       quantity: stockItem?.quantity || 0,
       min_quantity: stockItem?.min_quantity || 5,
       unit: stockItem?.unit || 'unité',
       unit_price: stockItem?.unit_price || 0,
       supplier_id: stockItem?.supplier_id || '',
       location: stockItem?.location || '',
+      stock_type: stockItem?.stock_type || 'external',
     },
   });
 
@@ -98,24 +101,33 @@ export function StockForm({ open, onOpenChange, stockItem, onSubmit }: StockForm
         unit_price: stockItem.unit_price,
         supplier_id: stockItem.supplier_id || '',
         location: stockItem.location || '',
+        stock_type: stockItem.stock_type || 'external',
       });
     } else {
       form.reset({
         name: '',
         reference: '',
-        category: 'pieces',
+        category: categories[0]?.value || 'pieces',
         quantity: 0,
         min_quantity: 5,
         unit: 'unité',
         unit_price: 0,
         supplier_id: '',
         location: '',
+        stock_type: 'external',
       });
     }
-  }, [stockItem, form]);
+  }, [stockItem, categories, form]);
 
   const handleSubmit = (data: StockFormData) => {
-    onSubmit(data);
+    let minQuantity = data.min_quantity;
+    if (data.stock_type === 'internal') {
+      const defaultMin = data.unit === 'L' ? 25 : 5;
+      if (minQuantity < defaultMin) {
+        minQuantity = defaultMin;
+      }
+    }
+    onSubmit({ ...data, min_quantity: minQuantity });
     onOpenChange(false);
     form.reset();
   };
@@ -145,7 +157,7 @@ export function StockForm({ open, onOpenChange, stockItem, onSubmit }: StockForm
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <FormField
                 control={form.control}
                 name="reference"
@@ -173,10 +185,33 @@ export function StockForm({ open, onOpenChange, stockItem, onSubmit }: StockForm
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="pieces">Pièces détachées</SelectItem>
-                        <SelectItem value="consommables">Consommables</SelectItem>
-                        <SelectItem value="pneus">Pneus</SelectItem>
-                        <SelectItem value="huiles">Huiles & Lubrifiants</SelectItem>
+                        {categories.map((category) => (
+                          <SelectItem key={category.value} value={category.value}>
+                            {category.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="stock_type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Type de stock</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="external">Externe</SelectItem>
+                        <SelectItem value="internal">Interne</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

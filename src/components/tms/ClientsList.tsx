@@ -1,14 +1,15 @@
+import { useNavigate } from 'react-router-dom';
 import { useTMSClients, useDeleteTMSClient } from '@/hooks/useTMS';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Trash2, Loader2, Users } from 'lucide-react';
-import { ClientForm } from './ClientForm';
+import { Trash2, Loader2, Users, Eye } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 export function ClientsList() {
   const { data: clients = [], isLoading } = useTMSClients();
   const deleteClient = useDeleteTMSClient();
+  const navigate = useNavigate();
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
@@ -21,7 +22,6 @@ export function ClientsList() {
           <h2 className="text-xl font-semibold">Clients</h2>
           <p className="text-sm text-muted-foreground">{clients.length} client(s)</p>
         </div>
-        <ClientForm />
       </div>
 
       {clients.length === 0 ? (

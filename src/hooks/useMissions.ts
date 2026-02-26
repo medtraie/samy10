@@ -11,6 +11,18 @@ export interface Mission {
   mission_date: string;
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   notes: string | null;
+  fuel_quantity: number | null;
+  price_per_liter: number | null;
+  fuel_cost: number | null;
+  discount_rate: number | null;
+  discount_amount: number | null;
+  tax_rate: number | null;
+  tax_amount: number | null;
+  total_before_cap: number | null;
+  max_total_cost: number | null;
+  cash_amount: number | null;
+  extra_fees: number | null;
+  total_cost: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +35,18 @@ export interface MissionInsert {
   mission_date: string;
   status?: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   notes?: string | null;
+  fuel_quantity?: number | null;
+  price_per_liter?: number | null;
+  fuel_cost?: number | null;
+  discount_rate?: number | null;
+  discount_amount?: number | null;
+  tax_rate?: number | null;
+  tax_amount?: number | null;
+  total_before_cap?: number | null;
+  max_total_cost?: number | null;
+  cash_amount?: number | null;
+  extra_fees?: number | null;
+  total_cost?: number | null;
 }
 
 async function fetchMissions(): Promise<Mission[]> {

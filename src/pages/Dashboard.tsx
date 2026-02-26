@@ -199,6 +199,20 @@ export default function Dashboard() {
                 <h3 className="font-semibold text-foreground">{t('dashboard.costByVehicle')}</h3>
                 <p className="text-sm text-muted-foreground">{t('dashboard.thisMonth')}</p>
               </div>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'hsl(173, 58%, 39%)' }} />
+                  <span>Carburant</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'hsl(199, 89%, 48%)' }} />
+                  <span>Maintenance</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'hsl(25, 95%, 53%)' }} />
+                  <span>Autres</span>
+                </div>
+              </div>
             </div>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={costByVehicle} layout="vertical">

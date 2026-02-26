@@ -42,7 +42,7 @@ export function ClientForm() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button><Plus className="w-4 h-4 mr-2" /> Nouveau client</Button>
+        <Button><Plus className="w-4 h-4 mr-2" /> Nouveau client (TMS)</Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>

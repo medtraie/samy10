@@ -25,17 +25,20 @@ const formSchema = z.object({
   notes: z.string().optional(),
 });
 
+export type PaymentFormValues = z.infer<typeof formSchema>;
+
 interface PaymentFormProps {
   onSuccess: () => void;
+  initialValues?: Partial<PaymentFormValues>;
 }
 
-export function PaymentForm({ onSuccess }: PaymentFormProps) {
+export function PaymentForm({ onSuccess, initialValues }: PaymentFormProps) {
   const { createPayment } = usePaymentMutation();
   const { data: cashRegisters = [] } = useCashRegisters();
   const { data: bankAccounts = [] } = useBankAccounts();
   const [isAddCaisseOpen, setIsAddCaisseOpen] = useState(false);
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<PaymentFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       payment_type: 'expense',
@@ -45,6 +48,7 @@ export function PaymentForm({ onSuccess }: PaymentFormProps) {
       entity_name: '',
       reference_number: '',
       notes: '',
+      ...(initialValues || {}),
     },
   });
 

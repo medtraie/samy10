@@ -19,6 +19,7 @@ const resources = {
         transportTMS: 'Transport TMS',
         fuel: 'Carburant',
         citerne: 'Citerne',
+        oil: 'Huile',
         maintenance: 'Maintenance',
         stock: 'Stock',
         achats: 'Achats',

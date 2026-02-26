@@ -17,11 +17,14 @@ import Missions from "./pages/Missions";
 import Fuel from "./pages/Fuel";
 import Maintenance from "./pages/Maintenance";
 import Stock from "./pages/Stock";
+import SupplierDetail from "./pages/SupplierDetail";
+import Oil from "./pages/Oil";
 import TransportBTP from "./pages/TransportBTP";
 import TransportTouristique from "./pages/TransportTouristique";
 import TransportVoyageurs from "./pages/TransportVoyageurs";
 import TransportTMS from "./pages/TransportTMS";
 import Clients from "./pages/Clients";
+import ClientDetail from "./pages/ClientDetail";
 import Revisions from "./pages/Revisions";
 import FinancePage from "./pages/FinancePage";
 import SettingsPage from "./pages/SettingsPage";
@@ -52,13 +55,17 @@ const App = () => (
           <Route path="/live-map" element={<ProtectedRoute><LiveMap /></ProtectedRoute>} />
           <Route path="/missions" element={<ProtectedRoute><Missions /></ProtectedRoute>} />
           <Route path="/fuel" element={<ProtectedRoute><Fuel /></ProtectedRoute>} />
+          <Route path="/oil" element={<ProtectedRoute><Oil /></ProtectedRoute>} />
           <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
           <Route path="/stock" element={<ProtectedRoute><Stock /></ProtectedRoute>} />
+          <Route path="/stock/suppliers/:id" element={<ProtectedRoute><SupplierDetail /></ProtectedRoute>} />
           <Route path="/transport-btp" element={<ProtectedRoute><TransportBTP /></ProtectedRoute>} />
           <Route path="/transport-touristique" element={<ProtectedRoute><TransportTouristique /></ProtectedRoute>} />
           <Route path="/transport-voyageurs" element={<ProtectedRoute><TransportVoyageurs /></ProtectedRoute>} />
           <Route path="/transport-tms" element={<ProtectedRoute><TransportTMS /></ProtectedRoute>} />
           <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+          <Route path="/clients/tourism/:id" element={<ProtectedRoute><ClientDetail type="tourism" /></ProtectedRoute>} />
+          <Route path="/clients/tms/:id" element={<ProtectedRoute><ClientDetail type="tms" /></ProtectedRoute>} />
           <Route path="/revisions" element={<ProtectedRoute><Revisions /></ProtectedRoute>} />
           <Route path="/comptabilite" element={<ProtectedRoute><Comptabilite /></ProtectedRoute>} />
           <Route path="/citerne" element={<ProtectedRoute><Citerne /></ProtectedRoute>} />

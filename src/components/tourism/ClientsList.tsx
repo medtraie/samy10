@@ -5,9 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { User, Mail, Phone, Building2, Trash2, MapPin } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
+import { useNavigate } from 'react-router-dom';
+
 export function ClientsList() {
   const { data: clients, isLoading } = useTourismClients();
   const deleteClient = useDeleteTourismClient();
+  const navigate = useNavigate();
 
   if (isLoading) {
     return (
@@ -32,7 +35,12 @@ export function ClientsList() {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {clients.map((client) => (
-        <ClientCard key={client.id} client={client} onDelete={() => deleteClient.mutate(client.id)} />
+        <ClientCard 
+          key={client.id} 
+          client={client} 
+          onDelete={() => deleteClient.mutate(client.id)} 
+          onClick={() => navigate(`/clients/tourism/${client.id}`)}
+        />
       ))}
     </div>
   );
@@ -41,11 +49,12 @@ export function ClientsList() {
 interface ClientCardProps {
   client: TourismClient;
   onDelete: () => void;
+  onClick: () => void;
 }
 
-function ClientCard({ client, onDelete }: ClientCardProps) {
+function ClientCard({ client, onDelete, onClick }: ClientCardProps) {
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={onClick}>
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
           <CardTitle className="text-base flex items-center gap-2">
@@ -58,7 +67,10 @@ function ClientCard({ client, onDelete }: ClientCardProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            onClick={onDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
           >
             <Trash2 className="w-4 h-4" />
           </Button>

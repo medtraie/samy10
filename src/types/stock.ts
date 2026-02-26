@@ -11,6 +11,9 @@ export interface StockSupplier {
   notes: string | null;
   ordersCount?: number;
   totalSpent?: number;
+  invoicesCount?: number;
+  outstandingAmount?: number;
+  lastInvoiceDate?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -27,6 +30,7 @@ export interface StockItem {
   supplier_id: string | null;
   location: string | null;
   last_restocked: string | null;
+  stock_type?: 'internal' | 'external';
   created_at?: string;
   updated_at?: string;
   supplier?: StockSupplier; // For joined queries
@@ -42,4 +46,8 @@ export interface StockTransaction {
   notes: string | null;
   created_at: string;
   created_by: string | null;
+}
+
+export interface StockTransactionWithItem extends StockTransaction {
+  item?: StockItem | null;
 }

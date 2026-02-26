@@ -27,7 +27,8 @@ const categoryColors: Record<string, string> = {
 
 export function StockItemCard({ item, onEdit, onRestock }: StockItemCardProps) {
   const isLowStock = item.quantity <= item.min_quantity;
-  const stockPercentage = (item.quantity / item.min_quantity) * 100;
+  const minQuantity = item.min_quantity > 0 ? item.min_quantity : 1;
+  const stockPercentage = (item.quantity / minQuantity) * 100;
 
   const categoryColor = categoryColors[item.category] || 'bg-gray-500/10 text-gray-500';
   const categoryLabel = categoryLabels[item.category] || item.category;
@@ -51,9 +52,14 @@ export function StockItemCard({ item, onEdit, onRestock }: StockItemCardProps) {
               <p className="text-xs text-muted-foreground">Réf: {item.reference || '-'}</p>
             </div>
           </div>
-          <Badge variant="outline" className={categoryColor}>
-            {categoryLabel}
-          </Badge>
+          <div className="flex flex-col items-end gap-1">
+            <Badge variant="outline" className={categoryColor}>
+              {categoryLabel}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] px-2 py-0">
+              {item.stock_type === 'internal' ? 'Stock interne' : 'Stock externe'}
+            </Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-3">
@@ -76,7 +82,12 @@ export function StockItemCard({ item, onEdit, onRestock }: StockItemCardProps) {
           </div>
           <div className="bg-background/50 rounded-lg p-2 border border-border/50">
             <p className="text-xs text-muted-foreground">Prix unitaire</p>
-            <p className="text-lg font-bold text-foreground">{item.unit_price.toFixed(2)} MAD</p>
+            <p className="text-lg font-bold text-foreground">
+              {item.unit_price.toFixed(2)} MAD
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Valeur: {(item.quantity * item.unit_price).toFixed(2)} MAD
+            </p>
           </div>
         </div>
 

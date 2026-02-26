@@ -2,7 +2,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Users, Palmtree, PackageCheck } from 'lucide-react';
+import { Users, Palmtree, PackageCheck, TrendingUp, Building2, UserPlus } from 'lucide-react';
 import { useTourismClients } from '@/hooks/useTourism';
 import { useTMSClients } from '@/hooks/useTMS';
 import { ClientsList as TourismClientsList } from '@/components/tourism/ClientsList';
@@ -11,8 +11,9 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ClientForm as TourismClientForm } from '@/components/tourism/ClientForm';
+import { ClientForm as TMSClientForm } from '@/components/tms/ClientForm';
 import { useAppSettings } from '@/hooks/useAppSettings';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function Clients() {
   const { data: tourismClients = [] } = useTourismClients();
@@ -27,6 +28,13 @@ export default function Clients() {
   const tourismCount = showTourism ? tourismClients.length : 0;
   const tmsCount = showTMS ? tmsClients.length : 0;
   const total = tourismCount + tmsCount;
+
+  // Calculate companies vs individuals (simple heuristic: has company name)
+  const companyCount = useMemo(() => {
+    const tourismCompanies = tourismClients.filter(c => !!c.company).length;
+    const tmsCompanies = tmsClients.filter(c => !!c.company).length;
+    return (showTourism ? tourismCompanies : 0) + (showTMS ? tmsCompanies : 0);
+  }, [tourismClients, tmsClients, showTourism, showTMS]);
 
   const searchLower = search.toLowerCase();
   const match = (v: string | null | undefined) => (v || '').toLowerCase().includes(searchLower);
@@ -48,30 +56,96 @@ export default function Clients() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold text-foreground">Clients</h1>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Badge variant="outline" className="flex items-center gap-2">
-                <Users className="w-4 h-4" /> Total: {total}
-              </Badge>
-              {showTourism && (
-                <Badge variant="secondary" className="flex items-center gap-2">
-                  <Palmtree className="w-4 h-4" /> Touristique: {tourismCount}
-                </Badge>
-              )}
-              {showTMS && (
-                <Badge variant="secondary" className="flex items-center gap-2">
-                  <PackageCheck className="w-4 h-4" /> TMS: {tmsCount}
-                </Badge>
-              )}
-            </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Gestion des Clients</h1>
+            <p className="text-muted-foreground">Gérez votre portefeuille client et suivez les performances.</p>
           </div>
-          <div className="w-full sm:w-80">
+          <div className="flex gap-2">
+            {showTourism && (
+              <Dialog open={showTourismClientForm} onOpenChange={setShowTourismClientForm}>
+                <Button onClick={() => setShowTourismClientForm(true)}>
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Nouveau Client (Tourisme)
+                </Button>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Nouveau client (Touristique)</DialogTitle>
+                  </DialogHeader>
+                  <TourismClientForm onSuccess={() => setShowTourismClientForm(false)} />
+                </DialogContent>
+              </Dialog>
+            )}
+            {showTMS && (
+              <TMSClientForm />
+            )}
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{total}</div>
+              <p className="text-xs text-muted-foreground">
+                Portefeuille global
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Sociétés</CardTitle>
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{companyCount}</div>
+              <p className="text-xs text-muted-foreground">
+                Clients B2B
+              </p>
+            </CardContent>
+          </Card>
+          {showTourism && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Tourisme</CardTitle>
+                <Palmtree className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{tourismCount}</div>
+                <p className="text-xs text-muted-foreground">
+                  Clients touristiques
+                </p>
+              </CardContent>
+            </Card>
+          )}
+          {showTMS && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Logistique (TMS)</CardTitle>
+                <PackageCheck className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{tmsCount}</div>
+                <p className="text-xs text-muted-foreground">
+                  Clients transport
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-sm">
             <Input
-              placeholder="Rechercher un client..."
+              placeholder="Rechercher par nom, téléphone, email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
             />
+            <Users className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
           </div>
         </div>
 
@@ -92,19 +166,6 @@ export default function Clients() {
 
             {showTourism && (
               <TabsContent value="tourism">
-                <div className="flex justify-end mb-4">
-                  <Dialog open={showTourismClientForm} onOpenChange={setShowTourismClientForm}>
-                    <Button size="sm" onClick={() => setShowTourismClientForm(true)}>
-                      Nouveau client
-                    </Button>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Nouveau client (Touristique)</DialogTitle>
-                      </DialogHeader>
-                      <TourismClientForm onSuccess={() => setShowTourismClientForm(false)} />
-                    </DialogContent>
-                  </Dialog>
-                </div>
                 <TourismClientsList />
               </TabsContent>
             )}

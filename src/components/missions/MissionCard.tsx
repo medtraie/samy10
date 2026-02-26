@@ -38,6 +38,16 @@ interface MissionCardData {
   estimatedArrival: string;
   cargo: string;
   weight: number;
+  fuelQuantity: number;
+  pricePerLiter: number;
+  fuelCost: number;
+  discountRate: number;
+  discountAmount: number;
+  taxRate: number;
+  taxAmount: number;
+  cashAmount: number;
+  extraFees: number;
+  totalCost: number;
 }
 
 interface MissionCardProps {
@@ -61,28 +71,44 @@ export function MissionCard({ mission, onView, onEdit, onStatusChange, onDelete 
       case 'in_progress': return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200';
       case 'delivered': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200';
       case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
     }
   };
 
   const getStatusLabel = (status: MissionCardData['status']) => {
-    const labels = {
+    const labels: Record<string, string> = {
       planned: 'Planifiée',
       in_progress: 'En cours',
       delivered: 'Livrée',
       cancelled: 'Annulée',
     };
-    return labels[status];
+    return labels[status] || 'Inconnu';
   };
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (!dateStr) return '-';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (e) {
+      return '-';
+    }
   };
 
   const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    if (!dateStr) return '-';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return '-';
+    }
   };
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('fr-MA', { minimumFractionDigits: 0 }).format(amount) + ' MAD';
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -114,7 +140,7 @@ export function MissionCard({ mission, onView, onEdit, onStatusChange, onDelete 
                 <Edit className="h-4 w-4 mr-2" />
                 Modifier
               </DropdownMenuItem>
-              {mission.status === 'in_progress' && (
+              {(mission.status === 'in_progress' || mission.status === 'planned') && (
                 <DropdownMenuItem onClick={() => onStatusChange?.(mission, 'delivered')}>
                   <CheckCircle className="h-4 w-4 mr-2 text-emerald-600" />
                   Marquer livrée
@@ -189,6 +215,46 @@ export function MissionCard({ mission, onView, onEdit, onStatusChange, onDelete 
             <span className="text-muted-foreground">{mission.weight.toLocaleString('fr-FR')} kg</span>
           </div>
         </div>
+
+        {mission.status === 'delivered' && (
+          <>
+            <div className="h-px bg-border my-3" />
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Carburant</span>
+                <span className="font-medium">{mission.fuelQuantity.toLocaleString('fr-FR')} L</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Prix/L</span>
+                <span className="font-medium">{formatCurrency(mission.pricePerLiter)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Coût carburant</span>
+                <span className="font-medium">{formatCurrency(mission.fuelCost)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Montant remis</span>
+                <span className="font-medium">{formatCurrency(mission.cashAmount)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Frais supplémentaires</span>
+                <span className="font-medium">{formatCurrency(mission.extraFees)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Remise</span>
+                <span className="font-medium">{formatCurrency(mission.discountAmount)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">TVA</span>
+                <span className="font-medium">{formatCurrency(mission.taxAmount)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Coût total</span>
+                <span className="font-semibold text-primary">{formatCurrency(mission.totalCost)}</span>
+              </div>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

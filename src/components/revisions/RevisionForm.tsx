@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCreateRevision } from '@/hooks/useRevisions';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
 import { supabase } from '@/integrations/supabase/client';
-import { useState } from 'react';
+import { consumeInternalStock } from '@/services/stockService';
+import { useEffect, useState } from 'react';
+import { getStockItems } from '@/services/stockService';
+import { StockItem } from '@/types/stock';
 
 const formSchema = z.object({
   vehicle_plate: z.string().min(1, 'Véhicule requis'),
@@ -22,6 +25,12 @@ const formSchema = z.object({
   last_km: z.number().optional(),
   file_url: z.string().optional(),
   notes: z.string().optional(),
+  stock_items: z.array(
+    z.object({
+      stockItemId: z.string().min(1),
+      quantity: z.number().min(1),
+    })
+  ).optional(),
 });
 
 interface RevisionFormProps {
@@ -34,6 +43,7 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [modeTab, setModeTab] = useState<'days' | 'km'>('days');
+   const [internalStockItems, setInternalStockItems] = useState<StockItem[]>([]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,8 +54,28 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
       interval_days: 90,
       interval_km: 10000,
       notes: '',
+      stock_items: [],
     },
   });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'stock_items',
+  });
+
+  useEffect(() => {
+    const loadInternalStock = async () => {
+      try {
+        const items = await getStockItems();
+        const internal = items.filter((item) => item.stock_type === 'internal');
+        setInternalStockItems(internal);
+      } catch (error) {
+        console.error('Error loading internal stock items for revisions', error);
+      }
+    };
+
+    loadInternalStock();
+  }, []);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     let fileUrl = values.file_url || null;
@@ -72,6 +102,18 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
       next_due_date = d.toISOString().slice(0, 10);
     } else if (values.mode === 'km' && values.last_km && values.interval_km) {
       next_due_km = values.last_km + values.interval_km;
+    }
+
+    const stockItems = values.stock_items || [];
+
+    for (const item of stockItems) {
+      const quantity = item.quantity || 0;
+      if (!item.stockItemId || quantity <= 0) continue;
+      await consumeInternalStock(
+        item.stockItemId,
+        quantity,
+        `Révision ${values.type} véhicule ${values.vehicle_plate}`
+      );
     }
 
     await createRevision.mutateAsync({
@@ -241,6 +283,86 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
               </FormItem>
             )}
           />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <FormLabel>Consommation stock interne (optionnel)</FormLabel>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => append({ stockItemId: '', quantity: 1 })}
+              disabled={internalStockItems.length === 0}
+            >
+              Ajouter
+            </Button>
+          </div>
+          {fields.length > 0 && (
+            <div className="space-y-2">
+              {fields.map((field, index) => (
+                <div key={field.id} className="grid grid-cols-12 gap-2">
+                  <div className="col-span-7">
+                    <FormField
+                      control={form.control}
+                      name={`stock_items.${index}.stockItemId`}
+                      render={({ field: stockField }) => (
+                        <FormItem>
+                          <Select
+                            value={stockField.value}
+                            onValueChange={stockField.onChange}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sélectionner un article interne" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {internalStockItems.map((item) => (
+                                <SelectItem key={item.id} value={item.id}>
+                                  {item.name} ({item.quantity} {item.unit})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <FormField
+                      control={form.control}
+                      name={`stock_items.${index}.quantity`}
+                      render={({ field: qtyField }) => (
+                        <FormItem>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={1}
+                              {...qtyField}
+                              onChange={(e) => qtyField.onChange(parseInt(e.target.value) || 0)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="col-span-2 flex items-center justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => remove(index)}
+                    >
+                      ×
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <Button type="submit" disabled={createRevision.isPending || uploading} className="w-full">

@@ -26,6 +26,12 @@ export interface VehicleRevision {
   updated_at: string;
 }
 
+export type ComputedRevision = VehicleRevision & {
+  currentKm: number | null;
+  remainingDays: number | null;
+  remainingKm: number | null;
+};
+
 function useCrudMutation<T>(
   queryKeys: string[],
   successMsg: string,
@@ -95,21 +101,46 @@ export function useComputedRevisions() {
 
   const now = new Date();
 
-  const computed = useMemo(() => {
+  const computed = useMemo<ComputedRevision[]>(() => {
     return revisions.map((rev) => {
       const vehicle = byPlate.get(rev.vehicle_plate);
       const currentKm = vehicle?.mileage ?? null;
       let status: VehicleRevision['status'] = rev.status || 'pending';
+      let remainingDays: number | null = null;
+      let remainingKm: number | null = null;
 
-      if (rev.mode === 'days' && rev.next_due_date) {
-        const due = new Date(rev.next_due_date);
-        status = due < now ? 'overdue' : (Math.ceil((due.getTime() - now.getTime()) / 86400000) <= 7 ? 'due' : 'pending');
-      } else if (rev.mode === 'km' && rev.next_due_km && currentKm != null) {
-        const remaining = rev.next_due_km - currentKm;
-        status = remaining < 0 ? 'overdue' : (remaining <= 200 ? 'due' : 'pending');
+      if (status !== 'completed') {
+        if (rev.mode === 'days' && rev.next_due_date) {
+          const due = new Date(rev.next_due_date);
+          const diffDays = Math.ceil(
+            (due.getTime() - now.getTime()) / 86400000
+          );
+          remainingDays = diffDays;
+          status =
+            due < now
+              ? 'overdue'
+              : diffDays <= 7
+              ? 'due'
+              : 'pending';
+        } else if (rev.mode === 'km' && rev.next_due_km && currentKm != null) {
+          const remaining = rev.next_due_km - currentKm;
+          remainingKm = remaining;
+          status =
+            remaining < 0
+              ? 'overdue'
+              : remaining <= 200
+              ? 'due'
+              : 'pending';
+        }
       }
 
-      return { ...rev, status, currentKm };
+      return {
+        ...rev,
+        status,
+        currentKm,
+        remainingDays,
+        remainingKm,
+      };
     });
   }, [revisions, byPlate, now]);
 
