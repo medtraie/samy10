@@ -22,6 +22,10 @@ export interface VehicleRevision {
   status: 'pending' | 'due' | 'overdue' | 'completed';
   file_url: string | null;
   notes: string | null;
+  cost: number | null;
+  garage_name: string | null;
+  invoice_number: string | null;
+  recurrence_enabled: boolean;
   created_at: string;
   updated_at: string;
 }

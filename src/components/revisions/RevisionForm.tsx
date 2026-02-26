@@ -4,6 +4,7 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,6 +26,10 @@ const formSchema = z.object({
   last_km: z.number().optional(),
   file_url: z.string().optional(),
   notes: z.string().optional(),
+  cost: z.number().min(0).optional(),
+  garage_name: z.string().optional(),
+  invoice_number: z.string().optional(),
+  recurrence_enabled: z.boolean().default(true),
   stock_items: z.array(
     z.object({
       stockItemId: z.string().min(1),
@@ -55,6 +60,10 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
       interval_km: 10000,
       notes: '',
       stock_items: [],
+      cost: 0,
+      garage_name: '',
+      invoice_number: '',
+      recurrence_enabled: true,
     },
   });
 
@@ -129,6 +138,10 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
       status: 'pending',
       file_url: fileUrl,
       notes: values.notes || null,
+      cost: values.cost || null,
+      garage_name: values.garage_name || null,
+      invoice_number: values.invoice_number || null,
+      recurrence_enabled: values.recurrence_enabled,
     });
     form.reset();
     onSuccess?.();
@@ -261,6 +274,71 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
             </FormItem>
           )}
         />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="cost"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Coût (MAD)</FormLabel>
+                <FormControl>
+                  <Input type="number" min={0} {...field} onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="invoice_number"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>N° Facture</FormLabel>
+                <FormControl>
+                  <Input placeholder="FAC-2024-001" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="garage_name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Prestataire / Garage</FormLabel>
+                <FormControl>
+                  <Input placeholder="Nom du garage" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="recurrence_enabled"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm mt-6">
+                <div className="space-y-0.5">
+                  <FormLabel>Récurrence automatique</FormLabel>
+                  <div className="text-[0.8rem] text-muted-foreground">
+                    Créer automatiquement la prochaine échéance
+                  </div>
+                </div>
+                <FormControl>
+                  <Checkbox 
+                    checked={field.value} 
+                    onCheckedChange={field.onChange} 
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FormItem>
