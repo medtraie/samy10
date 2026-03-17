@@ -8,9 +8,11 @@ import { TripsList } from '@/components/passenger/TripsList';
 import { TicketsList } from '@/components/passenger/TicketsList';
 import { BaggageList } from '@/components/passenger/BaggageList';
 import { PassengerReports } from '@/components/passenger/PassengerReports';
+import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
 
 export default function TransportVoyageurs() {
   const [activeTab, setActiveTab] = useState('trips');
+  const { data: companyProfile } = useTourismCompanyProfile();
 
   return (
     <DashboardLayout>
@@ -20,6 +22,9 @@ export default function TransportVoyageurs() {
           <h1 className="text-2xl font-bold text-foreground">Transport de Voyageurs</h1>
           <p className="text-muted-foreground">
             Gestion des lignes, voyages, billetterie et bagages
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Société: {companyProfile?.company_name || 'Non renseignée'}
           </p>
         </div>
 

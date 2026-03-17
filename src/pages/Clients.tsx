@@ -83,7 +83,7 @@ export default function Clients() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+          <Card className="dashboard-panel">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
@@ -95,7 +95,7 @@ export default function Clients() {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Sociétés</CardTitle>
               <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -108,7 +108,7 @@ export default function Clients() {
             </CardContent>
           </Card>
           {showTourism && (
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Tourisme</CardTitle>
                 <Palmtree className="h-4 w-4 text-muted-foreground" />
@@ -122,7 +122,7 @@ export default function Clients() {
             </Card>
           )}
           {showTMS && (
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Logistique (TMS)</CardTitle>
                 <PackageCheck className="h-4 w-4 text-muted-foreground" />
@@ -176,7 +176,7 @@ export default function Clients() {
             )}
           </Tabs>
         ) : (
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-6 text-center text-sm text-muted-foreground">
               Aucun module client activé
             </CardContent>

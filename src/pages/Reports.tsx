@@ -735,12 +735,12 @@ export default function Reports() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <TrendingUp className="w-4 h-4 text-info" />
-                      أعلى المسافات اليوم
+                      Plus grandes distances aujourd'hui
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {topDistanceVehicles.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">لا توجد بيانات متاحة</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">Aucune donnée disponible</p>
                     ) : (
                       <div className="space-y-3">
                         {topDistanceVehicles.map((v) => (
@@ -758,12 +758,12 @@ export default function Reports() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Fuel className="w-4 h-4 text-destructive" />
-                      وقود منخفض
+                      Carburant faible
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {lowFuelVehicles.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">لا توجد تنبيهات وقود</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">Aucune alerte carburant</p>
                     ) : (
                       <div className="space-y-3">
                         {lowFuelVehicles.map((fd, i) => (

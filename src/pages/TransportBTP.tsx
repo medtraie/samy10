@@ -5,9 +5,11 @@ import { Route, TruckIcon, FileText } from 'lucide-react';
 import { TrajetsList } from '@/components/transport/TrajetsList';
 import { VoyagesList } from '@/components/transport/VoyagesList';
 import { FacturesList } from '@/components/transport/FacturesList';
+import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
 
 export default function TransportBTP() {
   const { t } = useTranslation();
+  const { data: companyProfile } = useTourismCompanyProfile();
 
   return (
     <DashboardLayout>
@@ -16,6 +18,9 @@ export default function TransportBTP() {
           <h1 className="text-2xl font-bold text-foreground">{t('nav.transportBTP')}</h1>
           <p className="text-muted-foreground">
             Gestion du transport BTP: trajets, voyages et facturation
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Société: {companyProfile?.company_name || 'Non renseignée'}
           </p>
         </div>
 

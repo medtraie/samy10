@@ -14,7 +14,7 @@ interface SupplierCardProps {
 export function SupplierCard({ supplier, onEdit, onOrder, onView }: SupplierCardProps) {
   return (
     <Card
-      className="hover:shadow-md transition-shadow animate-in fade-in zoom-in-95 duration-300 cursor-pointer"
+      className="dashboard-panel animate-in fade-in zoom-in-95 duration-300 cursor-pointer"
       onClick={() => onView?.(supplier)}
     >
       <CardContent className="p-4">

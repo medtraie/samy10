@@ -5,14 +5,20 @@ import { TarifsList } from '@/components/tms/TarifsList';
 import { DevisList } from '@/components/tms/DevisList';
 import { OrdersList } from '@/components/tms/OrdersList';
 import { InvoicesList } from '@/components/tms/InvoicesList';
+import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
 
 export default function TransportTMS() {
+  const { data: companyProfile } = useTourismCompanyProfile();
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Transport - TMS</h1>
           <p className="text-muted-foreground">Gestion du transport de marchandises</p>
+          <p className="text-sm text-muted-foreground">
+            Société: {companyProfile?.company_name || 'Non renseignée'}
+          </p>
         </div>
 
         <Tabs defaultValue="orders" className="space-y-4">

@@ -68,10 +68,37 @@ export const createStockItem = async (item: Omit<StockItem, 'id' | 'created_at' 
     .single();
   
   if (error) throw error;
+
+  const initialQuantity = Number(data.quantity || 0);
+  if (initialQuantity > 0) {
+    const { error: logError } = await supabase
+      .from('stock_transactions')
+      .insert([
+        {
+          item_id: data.id,
+          type: 'IN',
+          quantity: initialQuantity,
+          previous_quantity: 0,
+          new_quantity: initialQuantity,
+          notes: 'Création article',
+        },
+      ]);
+
+    if (logError) console.error('Error logging transaction:', logError);
+  }
+
   return data;
 };
 
 export const updateStockItem = async (id: string, updates: Partial<StockItem>): Promise<StockItem> => {
+  const { data: previousItem, error: fetchError } = await supabase
+    .from('stock_items')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (fetchError) throw fetchError;
+
   const { data, error } = await supabase
     .from('stock_items')
     .update(updates)
@@ -80,6 +107,27 @@ export const updateStockItem = async (id: string, updates: Partial<StockItem>): 
     .single();
   
   if (error) throw error;
+
+  const previousQuantity = Number(previousItem.quantity || 0);
+  const newQuantity = Number(data.quantity || 0);
+  if (previousQuantity !== newQuantity) {
+    const delta = newQuantity - previousQuantity;
+    const { error: logError } = await supabase
+      .from('stock_transactions')
+      .insert([
+        {
+          item_id: data.id,
+          type: 'ADJUSTMENT',
+          quantity: delta,
+          previous_quantity: previousQuantity,
+          new_quantity: newQuantity,
+          notes: 'Ajustement via modification article',
+        },
+      ]);
+
+    if (logError) console.error('Error logging transaction:', logError);
+  }
+
   return data;
 };
 
@@ -151,7 +199,7 @@ export const consumeInternalStock = async (
 
   if (fetchError) throw fetchError;
   if (!item) throw new Error('Item not found');
-  const stockType = (item as any).stock_type as 'internal' | 'external' | undefined;
+  const stockType = item.stock_type as 'internal' | 'external' | undefined;
   if (stockType !== 'internal') {
     throw new Error('Only internal stock can be consumed');
   }

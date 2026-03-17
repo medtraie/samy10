@@ -230,7 +230,7 @@ export default function Fuel() {
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="overflow-hidden relative border-l-4 border-l-blue-500 shadow-md hover:shadow-lg transition-all duration-300">
+          <Card className="dashboard-panel border-l-4 border-l-blue-500">
             <div className="absolute right-0 top-0 h-24 w-24 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full -mr-4 -mt-4" />
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -250,7 +250,7 @@ export default function Fuel() {
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden relative border-l-4 border-l-emerald-500 shadow-md hover:shadow-lg transition-all duration-300">
+          <Card className="dashboard-panel border-l-4 border-l-emerald-500">
             <div className="absolute right-0 top-0 h-24 w-24 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-full -mr-4 -mt-4" />
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -268,7 +268,7 @@ export default function Fuel() {
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden relative border-l-4 border-l-amber-500 shadow-md hover:shadow-lg transition-all duration-300">
+          <Card className="dashboard-panel border-l-4 border-l-amber-500">
             <div className="absolute right-0 top-0 h-24 w-24 bg-gradient-to-br from-amber-500/10 to-transparent rounded-bl-full -mr-4 -mt-4" />
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -287,7 +287,7 @@ export default function Fuel() {
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden relative border-l-4 border-l-red-500 shadow-md hover:shadow-lg transition-all duration-300">
+          <Card className="dashboard-panel border-l-4 border-l-red-500">
             <div className="absolute right-0 top-0 h-24 w-24 bg-gradient-to-br from-red-500/10 to-transparent rounded-bl-full -mr-4 -mt-4" />
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -310,7 +310,7 @@ export default function Fuel() {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="col-span-1 lg:col-span-2 shadow-md">
+          <Card className="col-span-1 lg:col-span-2 dashboard-panel p-4">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-primary" />
@@ -358,7 +358,7 @@ export default function Fuel() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-md">
+          <Card className="dashboard-panel p-4">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-primary" />
@@ -404,7 +404,7 @@ export default function Fuel() {
         </div>
 
         {/* Detailed Table */}
-        <Card className="shadow-md">
+        <Card className="dashboard-panel p-4">
           <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <CardTitle>Détail par Véhicule</CardTitle>

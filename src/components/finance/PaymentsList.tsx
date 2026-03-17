@@ -21,7 +21,7 @@ export function PaymentsList() {
   );
 
   return (
-    <Card>
+    <Card className="dashboard-panel">
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Règlements Client & Fournisseur</CardTitle>

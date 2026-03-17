@@ -13,6 +13,8 @@ import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useTourismCompanyProfile, TOURISM_COMPANY_ID, type TourismCompanyProfile } from '@/hooks/useTourismCompany';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Dialog,
   DialogContent,
@@ -42,6 +44,7 @@ import {
 export function InvoicesList() {
   const { data: invoices, isLoading } = useTourismInvoices();
   const deleteInvoice = useDeleteTourismInvoice();
+  const { data: companyProfile } = useTourismCompanyProfile();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<TourismInvoice | null>(null);
 
@@ -50,73 +53,259 @@ export function InvoicesList() {
     setDetailsOpen(true);
   };
 
-  const handleDownloadPdf = (invoice: TourismInvoice) => {
+  const handleDownloadPdf = async (invoice: TourismInvoice) => {
     const doc = new jsPDF();
     const formatCurrency = (value: number) => `${value.toFixed(2)} MAD`;
-    
-    // Header background
-    doc.setFillColor(22, 78, 99);
-    doc.rect(0, 0, 210, 32, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
-    doc.text('Parc gps', 14, 18);
-    doc.setFontSize(11);
-    doc.text('Facture Touristique', 14, 26);
+    const formatDate = (date: string | null | undefined) => {
+      if (!date) return '-';
+      return format(new Date(date), 'dd/MM/yyyy');
+    };
+    const safeSingleLine = (value: string | null | undefined, maxLen = 65) => {
+      const normalized = (value || '').replace(/\s+/g, ' ').trim();
+      if (!normalized) return '-';
+      return normalized.length > maxLen ? `${normalized.slice(0, maxLen - 1)}…` : normalized;
+    };
 
-    // Invoice Info
-    doc.setTextColor(17, 24, 39);
-    doc.setFontSize(18);
-    doc.text(`FAC ${invoice.invoice_number}`, 196, 20, { align: 'right' });
-    doc.setFontSize(10);
+    const colors = {
+      header: { r: 9, g: 30, b: 66 },
+      accent: { r: 14, g: 116, b: 144 },
+      border: { r: 226, g: 232, b: 240 },
+      mutedText: { r: 71, g: 85, b: 105 },
+      bodyText: { r: 17, g: 24, b: 39 },
+      softBg: { r: 241, g: 245, b: 249 },
+    };
+
+    const ensureCompany = async (): Promise<TourismCompanyProfile | null> => {
+      if (companyProfile) return companyProfile;
+      const { data: singleton } = await supabase
+        .from('tourism_company_profile')
+        .select('*')
+        .eq('id', TOURISM_COMPANY_ID)
+        .maybeSingle();
+
+      if (singleton) return singleton as TourismCompanyProfile;
+
+      const { data } = await supabase
+        .from('tourism_company_profile')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return data as TourismCompanyProfile | null;
+    };
+
+    const companyData = await ensureCompany();
+
+    const dataUrlFromBlob = async (blob: Blob) => {
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Failed to read image'));
+        reader.readAsDataURL(blob);
+      });
+    };
+
+    const logoX = 4;
+    const logoY = 6;
+    const logoW = 36;
+    const logoH = 24;
+
+    const addLogo = async () => {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(logoX, logoY, logoW, logoH, 2, 2, 'F');
+
+      if (!companyData?.logo_url) {
+        doc.setDrawColor(255, 255, 255);
+        doc.roundedRect(logoX, logoY, logoW, logoH, 2, 2, 'S');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+        doc.text('LOGO', logoX + logoW / 2, logoY + logoH / 2 + 2.2, { align: 'center' });
+        return;
+      }
+
+      try {
+        const extractStoragePath = (logo: string) => {
+          if (!logo) return null;
+          if (!logo.startsWith('http')) return logo.split('?')[0];
+
+          const publicMarker = '/storage/v1/object/public/tourism-assets/';
+          const signedMarker = '/storage/v1/object/sign/tourism-assets/';
+
+          const publicIdx = logo.indexOf(publicMarker);
+          if (publicIdx >= 0) return logo.slice(publicIdx + publicMarker.length).split('?')[0];
+
+          const signedIdx = logo.indexOf(signedMarker);
+          if (signedIdx >= 0) return logo.slice(signedIdx + signedMarker.length).split('?')[0];
+
+          return null;
+        };
+
+        const blobFromStorage = async () => {
+          const path = extractStoragePath(companyData.logo_url || '');
+          if (!path) return null;
+          const { data: fileBlob, error } = await supabase.storage.from('tourism-assets').download(path);
+          if (error || !fileBlob) return null;
+          return fileBlob;
+        };
+
+        const blob =
+          (await blobFromStorage()) ??
+          (await (async () => {
+            const srcUrl = companyData.logo_url.includes('?')
+              ? companyData.logo_url
+              : `${companyData.logo_url}?t=${Date.now()}`;
+            const response = await fetch(srcUrl, { cache: 'no-cache', headers: { Accept: 'image/*' } });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.blob();
+          })());
+
+        const dataUrl = await dataUrlFromBlob(blob);
+        const formatMatch = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/);
+        const rawFormat = formatMatch ? formatMatch[1].toUpperCase() : 'PNG';
+        const format = rawFormat === 'JPG' ? 'JPEG' : rawFormat;
+        doc.addImage(dataUrl, format as any, logoX + 1, logoY + 1, logoW - 2, logoH - 2, undefined, 'FAST');
+      } catch {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+        doc.text('LOGO', logoX + logoW / 2, logoY + logoH / 2 + 2.2, { align: 'center' });
+      }
+    };
+
+    doc.setFillColor(colors.header.r, colors.header.g, colors.header.b);
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setFillColor(colors.accent.r, colors.accent.g, colors.accent.b);
+    doc.rect(0, 40, 210, 2, 'F');
+
+    await addLogo();
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    const headerTextX = logoX + logoW + 8;
+    doc.text(companyData?.company_name || 'Parc gps', headerTextX, 15);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    const contactLine = [
+      companyData?.contact_email ? companyData.contact_email : null,
+      companyData?.contact_phone ? companyData.contact_phone : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+    if (contactLine) doc.text(safeSingleLine(contactLine, 70), headerTextX, 22);
+
+    if (companyData?.address) {
+      doc.text(safeSingleLine(companyData.address, 70), headerTextX, 29);
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text(`FAC ${invoice.invoice_number}`, 196, 15, { align: 'right' });
+
     const statusLabel = {
       draft: 'Brouillon',
       sent: 'Envoyée',
       paid: 'Payée',
       cancelled: 'Annulée'
     }[invoice.status] || invoice.status;
-    doc.text(`Statut: ${statusLabel}`, 196, 26, { align: 'right' });
-    doc.text(`Date: ${format(new Date(invoice.invoice_date), 'dd/MM/yyyy')}`, 196, 31, { align: 'right' });
 
-    // Client Info
-    doc.setFontSize(11);
-    doc.text('Client', 14, 42);
-    doc.setFontSize(12);
-    doc.text(invoice.client?.name || 'Client inconnu', 14, 48);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Statut: ${statusLabel}`, 196, 22, { align: 'right' });
+    doc.text(`Date: ${formatDate(invoice.invoice_date)}`, 196, 29, { align: 'right' });
+    if (invoice.due_date) doc.text(`Échéance: ${formatDate(invoice.due_date)}`, 196, 36, { align: 'right' });
+
+    const boxY = 46;
+    const boxH = 36;
+    const boxW = 88;
+    const boxGap = 6;
+    const leftX = 14;
+    const rightX = leftX + boxW + boxGap;
+
+    doc.setDrawColor(colors.border.r, colors.border.g, colors.border.b);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(leftX, boxY, boxW, boxH, 3, 3, 'FD');
+    doc.roundedRect(rightX, boxY, boxW, boxH, 3, 3, 'FD');
+
+    doc.setFillColor(colors.softBg.r, colors.softBg.g, colors.softBg.b);
+    doc.roundedRect(leftX, boxY, boxW, 9, 3, 3, 'F');
+    doc.roundedRect(rightX, boxY, boxW, 9, 3, 3, 'F');
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    if (invoice.client?.address) {
-      doc.text(invoice.client.address, 14, 54);
-    }
-    if (invoice.mission) {
-      doc.text(`Mission: ${invoice.mission.reference}`, 14, invoice.client?.address ? 60 : 54);
+    doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+    doc.text('Client', leftX + 4, boxY + 6.2);
+    doc.text('Société', rightX + 4, boxY + 6.2);
+
+    const clientName = invoice.client?.name || 'Client inconnu';
+    doc.setFontSize(10.5);
+    doc.text(safeSingleLine(clientName, 40), leftX + 4, boxY + 15);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    const clientLines: string[] = [];
+    if (invoice.client?.address) clientLines.push(invoice.client.address);
+    const clientText = clientLines.join(' - ');
+    if (clientText) {
+      const lines = doc.splitTextToSize(clientText, boxW - 8);
+      doc.text(lines.slice(0, 2), leftX + 4, boxY + 21);
     }
 
-    // Summary Card
-    const summaryY = 70;
-    doc.setDrawColor(226, 232, 240);
-    doc.setFillColor(248, 250, 252);
-    doc.roundedRect(14, summaryY, 182, 26, 3, 3, 'FD');
+    const missionRef = invoice.mission?.reference_mission || invoice.mission?.reference || null;
+    if (invoice.mission_id) {
+      doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+      doc.text(`Réf mission: ${safeSingleLine(missionRef || '-', 28)}`, leftX + 4, boxY + 33);
+      doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text(safeSingleLine(companyData?.company_name || 'Parc gps', 40), rightX + 4, boxY + 15);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    const companyLines: string[] = [];
+    if (companyData?.address) companyLines.push(companyData.address);
+    if (companyData?.contact_email) companyLines.push(companyData.contact_email);
+    if (companyData?.contact_phone) companyLines.push(companyData.contact_phone);
+    const companyTextLines = doc.splitTextToSize(companyLines.join(' - '), boxW - 8);
+    doc.text(companyTextLines.slice(0, 2), rightX + 4, boxY + 21);
+    if (companyData?.tax_info) {
+      doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+      doc.setFontSize(8.5);
+      doc.text(doc.splitTextToSize(companyData.tax_info, boxW - 8).slice(0, 1), rightX + 4, boxY + 33);
+      doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+      doc.setFontSize(9);
+    }
+
+    const summaryY = boxY + boxH + 10;
+    doc.setDrawColor(colors.border.r, colors.border.g, colors.border.b);
+    doc.setFillColor(colors.softBg.r, colors.softBg.g, colors.softBg.b);
+    doc.roundedRect(14, summaryY, 182, 28, 3, 3, 'FD');
     doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
-    
+    doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+
     doc.text('Type', 20, summaryY + 10);
-    doc.text('Montant HT', 80, summaryY + 10); // Changed position
-    doc.text('TVA', 140, summaryY + 10); // Changed position
-    
+    doc.text('Montant HT', 86, summaryY + 10);
+    doc.text('TVA', 142, summaryY + 10);
+
     doc.setFontSize(12);
-    doc.setTextColor(17, 24, 39);
-    
+    doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+
     const billingTypeLabels: Record<string, string> = {
       flat: 'Forfait',
       hourly: 'Tarif horaire',
       per_km: 'Prix/km',
       custom: 'Personnalisé',
     };
-    
-    doc.text(billingTypeLabels[invoice.billing_type] || invoice.billing_type, 20, summaryY + 20);
-    doc.text(formatCurrency(invoice.subtotal), 80, summaryY + 20);
-    doc.text(`${invoice.tax_rate}%`, 140, summaryY + 20);
 
-    // Prepare table data
+    doc.text(billingTypeLabels[invoice.billing_type] || invoice.billing_type, 20, summaryY + 21);
+    doc.text(formatCurrency(invoice.subtotal), 86, summaryY + 21);
+    doc.text(`${invoice.tax_rate}%`, 142, summaryY + 21);
+
     let rows: any[] = [];
     if (invoice.billing_type === 'custom' && invoice.custom_lines) {
       rows = invoice.custom_lines.map(line => [
@@ -148,16 +337,17 @@ export function InvoicesList() {
       ]];
     }
 
-    // Table
-    const totalY = summaryY + 36;
-    
+    const tableY = summaryY + 38;
+
     autoTable(doc, {
-      startY: totalY + 16,
+      startY: tableY + 16,
       head: [['Description', 'Qté', 'Prix Unitaire', 'Total']],
-      body: rows,
-      theme: 'striped',
-      headStyles: { fillColor: [22, 78, 99], textColor: 255 },
-      styles: { fontSize: 10, cellPadding: 3 },
+      body: rows.length ? rows : [['-', '-', '-', '-']],
+      theme: 'grid',
+      headStyles: { fillColor: [colors.header.r, colors.header.g, colors.header.b], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [colors.softBg.r, colors.softBg.g, colors.softBg.b] },
+      styles: { fontSize: 10, cellPadding: 3, textColor: [colors.bodyText.r, colors.bodyText.g, colors.bodyText.b] },
+      margin: { left: 14, right: 14 },
       columnStyles: {
         1: { halign: 'right' },
         2: { halign: 'right' },
@@ -165,20 +355,64 @@ export function InvoicesList() {
       },
     });
 
-    // Total TTC
-    const finalY = (doc as any).lastAutoTable.finalY + 10;
-    doc.setFontSize(12);
-    doc.text('Total TTC', 196, finalY, { align: 'right' });
-    doc.setFontSize(16);
-    doc.text(formatCurrency(invoice.total_amount), 196, finalY + 8, { align: 'right' });
+    const afterTableY = (doc as any).lastAutoTable.finalY + 10;
+    const totalsX = 120;
+    const totalsW = 76;
+    const totalsH = 26;
+    doc.setDrawColor(colors.border.r, colors.border.g, colors.border.b);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(totalsX, afterTableY, totalsW, totalsH, 3, 3, 'FD');
 
-    // Footer
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+    doc.text('Total HT', totalsX + 6, afterTableY + 8);
+    doc.text('TVA', totalsX + 6, afterTableY + 14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+    doc.text('Total TTC', totalsX + 6, afterTableY + 21);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+    doc.text(formatCurrency(invoice.subtotal), totalsX + totalsW - 6, afterTableY + 8, { align: 'right' });
+    doc.text(formatCurrency(invoice.tax_amount), totalsX + totalsW - 6, afterTableY + 14, { align: 'right' });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(formatCurrency(invoice.total_amount), totalsX + totalsW - 6, afterTableY + 21, { align: 'right' });
+
+    const notesY = afterTableY + totalsH + 10;
+    if (invoice.notes) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+      doc.text('Notes', 14, notesY);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+      const noteLines = doc.splitTextToSize(invoice.notes, 182);
+      doc.text(noteLines, 14, notesY + 6);
+      doc.setTextColor(colors.bodyText.r, colors.bodyText.g, colors.bodyText.b);
+    }
+
     const pageHeight = doc.internal.pageSize.getHeight();
-    doc.setDrawColor(226, 232, 240);
-    doc.line(14, pageHeight - 18, 196, pageHeight - 18);
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text('Merci pour votre confiance', 14, pageHeight - 10);
+    doc.setDrawColor(colors.border.r, colors.border.g, colors.border.b);
+    doc.line(14, pageHeight - 26, 196, pageHeight - 26);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(colors.mutedText.r, colors.mutedText.g, colors.mutedText.b);
+    const f1 = companyData?.company_name ? safeSingleLine(companyData.company_name, 80) : '';
+    const footerContact = [
+      companyData?.contact_email ? companyData.contact_email : null,
+      companyData?.contact_phone ? companyData.contact_phone : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+    const f2 = safeSingleLine([companyData?.address || null, footerContact || null].filter(Boolean).join(' | '), 120);
+    const f3 = companyData?.tax_info ? safeSingleLine(companyData.tax_info, 120) : 'Merci pour votre confiance';
+    if (f1) doc.text(f1, 105, pageHeight - 18, { align: 'center' });
+    if (f2 && f2 !== '-') doc.text(f2, 105, pageHeight - 13, { align: 'center' });
+    doc.text(f3, 105, pageHeight - 8, { align: 'center' });
 
     doc.save(`Facture-${invoice.invoice_number}.pdf`);
   };
@@ -211,7 +445,7 @@ export function InvoicesList() {
             key={invoice.id} 
             invoice={invoice} 
             onDelete={() => deleteInvoice.mutate(invoice.id)}
-            onDownload={() => handleDownloadPdf(invoice)}
+            onDownload={() => void handleDownloadPdf(invoice)}
             onViewDetails={() => handleOpenDetails(invoice)}
           />
         ))}

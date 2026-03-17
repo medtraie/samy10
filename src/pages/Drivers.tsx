@@ -249,7 +249,7 @@ export default function Drivers() {
 
         {/* Debug Panel */}
         {showDebug && debug && (
-          <Card className="bg-slate-950 text-slate-50 border-slate-800">
+          <Card className="dashboard-panel bg-slate-950 text-slate-50 border-slate-800">
             <CardContent className="p-4 space-y-4">
               <div>
                 <h3 className="text-sm font-semibold text-blue-400 mb-2">Logs Serveur GPSwox</h3>
@@ -322,7 +322,7 @@ export default function Drivers() {
           <button
             onClick={() => setStatusFilter('all')}
             className={cn(
-              'p-4 rounded-xl border transition-all text-left',
+              'dashboard-panel p-4 rounded-xl border transition-all text-left',
               statusFilter === 'all' 
                 ? 'border-primary bg-primary/5' 
                 : 'border-border bg-card hover:border-primary/30'
@@ -342,7 +342,7 @@ export default function Drivers() {
           <button
             onClick={() => setStatusFilter('available')}
             className={cn(
-              'p-4 rounded-xl border transition-all text-left',
+              'dashboard-panel p-4 rounded-xl border transition-all text-left',
               statusFilter === 'available' 
                 ? 'border-success bg-success/5' 
                 : 'border-border bg-card hover:border-success/30'
@@ -362,7 +362,7 @@ export default function Drivers() {
           <button
             onClick={() => setStatusFilter('on_mission')}
             className={cn(
-              'p-4 rounded-xl border transition-all text-left',
+              'dashboard-panel p-4 rounded-xl border transition-all text-left',
               statusFilter === 'on_mission' 
                 ? 'border-info bg-info/5' 
                 : 'border-border bg-card hover:border-info/30'
@@ -382,7 +382,7 @@ export default function Drivers() {
           <button
             onClick={() => setStatusFilter('off_duty')}
             className={cn(
-              'p-4 rounded-xl border transition-all text-left',
+              'dashboard-panel p-4 rounded-xl border transition-all text-left',
               statusFilter === 'off_duty' 
                 ? 'border-muted bg-muted/30' 
                 : 'border-border bg-card hover:border-muted-foreground/30'
@@ -401,7 +401,7 @@ export default function Drivers() {
         </div>
 
         {/* Filters Bar */}
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-card p-4 rounded-xl border border-border">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between dashboard-panel p-4 rounded-xl border border-border">
           <div className="flex flex-1 gap-3 w-full md:w-auto">
             <div className="relative flex-1 md:max-w-xs">
               <Search className={cn('absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground', isRTL ? 'right-3' : 'left-3')} />
@@ -467,7 +467,7 @@ export default function Drivers() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-12 bg-card rounded-xl border border-border">
+          <div className="text-center py-12 dashboard-panel rounded-xl border border-border">
             <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
             <h3 className="text-lg font-medium text-foreground mb-1">Aucun conducteur trouvé</h3>
             <p className="text-muted-foreground mb-4">

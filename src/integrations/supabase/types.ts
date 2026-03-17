@@ -1351,6 +1351,11 @@ export type Database = {
           bank_account_id: string | null
           status: string | null
           notes: string | null
+          category: string | null
+          subcategory: string | null
+          source_module: string | null
+          source_id: string | null
+          attachment_url: string | null
           created_at: string
           updated_at: string
         }
@@ -1367,6 +1372,11 @@ export type Database = {
           bank_account_id?: string | null
           status?: string | null
           notes?: string | null
+          category?: string | null
+          subcategory?: string | null
+          source_module?: string | null
+          source_id?: string | null
+          attachment_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1383,6 +1393,11 @@ export type Database = {
           bank_account_id?: string | null
           status?: string | null
           notes?: string | null
+          category?: string | null
+          subcategory?: string | null
+          source_module?: string | null
+          source_id?: string | null
+          attachment_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -2946,6 +2961,515 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      },
+      rental_vehicles: {
+        Row: {
+          id: string
+          photo_url: string | null
+          brand: string
+          model: string
+          year: number | null
+          registration: string
+          vehicle_type: string
+          fuel_capacity: number | null
+          current_mileage: number | null
+          price_per_day: number
+          price_per_week: number
+          price_per_month: number
+          status: string
+          gps_imei: string | null
+          fuel_consumption: number | null
+          insurance_company: string | null
+          insurance_expiry: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          photo_url?: string | null
+          brand: string
+          model: string
+          year?: number | null
+          registration: string
+          vehicle_type?: string
+          fuel_capacity?: number | null
+          current_mileage?: number | null
+          price_per_day?: number
+          price_per_week?: number
+          price_per_month?: number
+          status?: string
+          gps_imei?: string | null
+          fuel_consumption?: number | null
+          insurance_company?: string | null
+          insurance_expiry?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          photo_url?: string | null
+          brand?: string
+          model?: string
+          year?: number | null
+          registration?: string
+          vehicle_type?: string
+          fuel_capacity?: number | null
+          current_mileage?: number | null
+          price_per_day?: number
+          price_per_week?: number
+          price_per_month?: number
+          status?: string
+          gps_imei?: string | null
+          fuel_consumption?: number | null
+          insurance_company?: string | null
+          insurance_expiry?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rental_clients: {
+        Row: {
+          id: string
+          full_name: string
+          phone: string | null
+          email: string | null
+          address: string | null
+          driver_license_number: string | null
+          driver_license_expiry: string | null
+          driver_license_photo_url: string | null
+          id_document_url: string | null
+          security_deposit_amount: number
+          score: number
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          full_name: string
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          driver_license_number?: string | null
+          driver_license_expiry?: string | null
+          driver_license_photo_url?: string | null
+          id_document_url?: string | null
+          security_deposit_amount?: number
+          score?: number
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          full_name?: string
+          phone?: string | null
+          email?: string | null
+          address?: string | null
+          driver_license_number?: string | null
+          driver_license_expiry?: string | null
+          driver_license_photo_url?: string | null
+          id_document_url?: string | null
+          security_deposit_amount?: number
+          score?: number
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rental_reservations: {
+        Row: {
+          id: string
+          reservation_number: string
+          client_id: string
+          vehicle_id: string
+          start_date: string
+          end_date: string
+          price_per_day: number
+          total_price: number
+          security_deposit: number
+          options: Json | null
+          status: string
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          reservation_number: string
+          client_id: string
+          vehicle_id: string
+          start_date: string
+          end_date: string
+          price_per_day?: number
+          total_price?: number
+          security_deposit?: number
+          options?: Json | null
+          status?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          reservation_number?: string
+          client_id?: string
+          vehicle_id?: string
+          start_date?: string
+          end_date?: string
+          price_per_day?: number
+          total_price?: number
+          security_deposit?: number
+          options?: Json | null
+          status?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rental_reservations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "rental_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rental_reservations_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "rental_vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rental_rentals: {
+        Row: {
+          id: string
+          rental_number: string
+          reservation_id: string | null
+          client_id: string
+          vehicle_id: string
+          start_datetime: string
+          end_datetime: string | null
+          actual_return_datetime: string | null
+          start_mileage: number | null
+          end_mileage: number | null
+          fuel_level_start: number | null
+          fuel_level_end: number | null
+          total_price: number
+          extra_charges: number
+          late_penalty: number
+          missing_fuel_charge: number
+          status: string
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          rental_number: string
+          reservation_id?: string | null
+          client_id: string
+          vehicle_id: string
+          start_datetime?: string
+          end_datetime?: string | null
+          actual_return_datetime?: string | null
+          start_mileage?: number | null
+          end_mileage?: number | null
+          fuel_level_start?: number | null
+          fuel_level_end?: number | null
+          total_price?: number
+          extra_charges?: number
+          late_penalty?: number
+          missing_fuel_charge?: number
+          status?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          rental_number?: string
+          reservation_id?: string | null
+          client_id?: string
+          vehicle_id?: string
+          start_datetime?: string
+          end_datetime?: string | null
+          actual_return_datetime?: string | null
+          start_mileage?: number | null
+          end_mileage?: number | null
+          fuel_level_start?: number | null
+          fuel_level_end?: number | null
+          total_price?: number
+          extra_charges?: number
+          late_penalty?: number
+          missing_fuel_charge?: number
+          status?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rental_rentals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "rental_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rental_rentals_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "rental_vehicles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rental_rentals_reservation_id_fkey"
+            columns: ["reservation_id"]
+            isOneToOne: false
+            referencedRelation: "rental_reservations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rental_contracts: {
+        Row: {
+          id: string
+          rental_id: string
+          contract_number: string
+          contract_json: Json | null
+          signature_data_url: string | null
+          signed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          rental_id: string
+          contract_number: string
+          contract_json?: Json | null
+          signature_data_url?: string | null
+          signed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          rental_id?: string
+          contract_number?: string
+          contract_json?: Json | null
+          signature_data_url?: string | null
+          signed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rental_contracts_rental_id_fkey"
+            columns: ["rental_id"]
+            isOneToOne: false
+            referencedRelation: "rental_rentals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rental_inspections: {
+        Row: {
+          id: string
+          rental_id: string | null
+          vehicle_id: string
+          inspection_type: string
+          checklist: Json | null
+          fuel_level: number | null
+          mileage: number | null
+          photos: Json | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          rental_id?: string | null
+          vehicle_id: string
+          inspection_type: string
+          checklist?: Json | null
+          fuel_level?: number | null
+          mileage?: number | null
+          photos?: Json | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          rental_id?: string | null
+          vehicle_id?: string
+          inspection_type?: string
+          checklist?: Json | null
+          fuel_level?: number | null
+          mileage?: number | null
+          photos?: Json | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rental_inspections_rental_id_fkey"
+            columns: ["rental_id"]
+            isOneToOne: false
+            referencedRelation: "rental_rentals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rental_inspections_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "rental_vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rental_fuel_logs: {
+        Row: {
+          id: string
+          vehicle_id: string
+          rental_id: string | null
+          log_date: string
+          liters: number
+          fuel_price_total: number
+          mileage: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          vehicle_id: string
+          rental_id?: string | null
+          log_date?: string
+          liters?: number
+          fuel_price_total?: number
+          mileage?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          vehicle_id?: string
+          rental_id?: string | null
+          log_date?: string
+          liters?: number
+          fuel_price_total?: number
+          mileage?: number | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rental_fuel_logs_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "rental_vehicles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rental_fuel_logs_rental_id_fkey"
+            columns: ["rental_id"]
+            isOneToOne: false
+            referencedRelation: "rental_rentals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rental_invoices: {
+        Row: {
+          id: string
+          invoice_number: string
+          rental_id: string
+          issue_date: string
+          due_date: string | null
+          amount_total: number
+          status: string
+          email_sent: boolean
+          invoice_json: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          invoice_number: string
+          rental_id: string
+          issue_date?: string
+          due_date?: string | null
+          amount_total?: number
+          status?: string
+          email_sent?: boolean
+          invoice_json?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          invoice_number?: string
+          rental_id?: string
+          issue_date?: string
+          due_date?: string | null
+          amount_total?: number
+          status?: string
+          email_sent?: boolean
+          invoice_json?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rental_invoices_rental_id_fkey"
+            columns: ["rental_id"]
+            isOneToOne: false
+            referencedRelation: "rental_rentals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rental_notifications: {
+        Row: {
+          id: string
+          notification_type: string
+          title: string | null
+          message: string | null
+          payload: Json | null
+          scheduled_at: string | null
+          sent_at: string | null
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          notification_type: string
+          title?: string | null
+          message?: string | null
+          payload?: Json | null
+          scheduled_at?: string | null
+          sent_at?: string | null
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          notification_type?: string
+          title?: string | null
+          message?: string | null
+          payload?: Json | null
+          scheduled_at?: string | null
+          sent_at?: string | null
+          status?: string
+          created_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {

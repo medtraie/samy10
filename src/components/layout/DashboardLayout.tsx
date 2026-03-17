@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -10,11 +10,26 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'ar';
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const sidebarMarginClass = isRTL
+    ? isSidebarCollapsed
+      ? 'mr-20'
+      : 'mr-64'
+    : isSidebarCollapsed
+      ? 'ml-20'
+      : 'ml-64';
 
   return (
-    <div className={`min-h-screen bg-background ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-      <Sidebar />
-      <div className={`${isRTL ? 'mr-64' : 'ml-64'} min-h-screen flex flex-col`}>
+    <div
+      className={`min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 ${isRTL ? 'rtl' : 'ltr'}`}
+      dir={isRTL ? 'rtl' : 'ltr'}
+    >
+      <Sidebar
+        collapsed={isSidebarCollapsed}
+        onToggle={() => setIsSidebarCollapsed((prev) => !prev)}
+      />
+      <div className={`${sidebarMarginClass} min-h-screen flex flex-col transition-[margin] duration-300`}>
         <Topbar />
         <main className="flex-1 p-6 overflow-auto">
           {children}

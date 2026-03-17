@@ -108,7 +108,7 @@ export default function Revisions() {
           </TabsList>
 
           <TabsContent value="list" className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-muted/30 rounded-lg border">
+            <div className="dashboard-panel p-4 flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Input
                   placeholder="Rechercher par véhicule..."

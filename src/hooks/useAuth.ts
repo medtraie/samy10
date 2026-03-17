@@ -50,7 +50,19 @@ export function useAuth() {
 
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
-    return { error };
+    if (!error) {
+      setSession(null);
+      setUser(null);
+      return { error: null };
+    }
+
+    const isMissingSession = error.message?.toLowerCase().includes('auth session missing');
+    if (!isMissingSession) return { error };
+
+    const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
+    setSession(null);
+    setUser(null);
+    return { error: localError };
   };
 
   return {

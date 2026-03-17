@@ -28,6 +28,7 @@ import ClientDetail from "./pages/ClientDetail";
 import Revisions from "./pages/Revisions";
 import FinancePage from "./pages/FinancePage";
 import SettingsPage from "./pages/SettingsPage";
+import LocationVehicules from "./pages/LocationVehicules";
 import {
   AchatsPage,
 } from "./pages/ComingSoon";
@@ -35,6 +36,7 @@ import Alerts from "./pages/Alerts";
 import Comptabilite from "./pages/Comptabilite";
 import Citerne from "./pages/Citerne";
 import Reports from "./pages/Reports";
+import Societe from "./pages/Societe";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -71,7 +73,9 @@ const App = () => (
           <Route path="/citerne" element={<ProtectedRoute><Citerne /></ProtectedRoute>} />
           <Route path="/achats" element={<ProtectedRoute><AchatsPage /></ProtectedRoute>} />
           <Route path="/finance" element={<ProtectedRoute><FinancePage /></ProtectedRoute>} />
+          <Route path="/location-vehicules" element={<ProtectedRoute><LocationVehicules /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+          <Route path="/societe" element={<ProtectedRoute><Societe /></ProtectedRoute>} />
           <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />

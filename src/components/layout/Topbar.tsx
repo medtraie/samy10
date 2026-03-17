@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Bell, Search, Globe, Moon, Sun } from 'lucide-react';
+import { Bell, Search, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -8,18 +8,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 export function Topbar() {
   const { t, i18n } = useTranslation();
-  const [isDark, setIsDark] = useState(false);
   const isRTL = i18n.language === 'ar';
-
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
-  };
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
 
   const toggleLanguage = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -27,7 +25,7 @@ export function Topbar() {
   };
 
   return (
-    <header className="h-16 border-b border-border bg-card flex items-center justify-between px-6">
+    <header className="h-16 border-b border-slate-200/70 bg-white/80 dark:bg-card/90 backdrop-blur-md flex items-center justify-between px-6">
       {/* Search */}
       <div className="flex-1 max-w-md">
         <div className="relative">
@@ -38,7 +36,10 @@ export function Topbar() {
           <Input
             type="search"
             placeholder={t('common.search')}
-            className={cn('w-full h-10 bg-muted/50 border-0', isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4')}
+            className={cn(
+              'w-full h-10 bg-white/60 dark:bg-muted/60 border border-slate-200/70 dark:border-border rounded-full text-sm shadow-[0_0_0_1px_rgba(148,163,184,0.15)] focus-visible:ring-1 focus-visible:ring-sky-500 focus-visible:border-sky-500 transition-colors',
+              isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'
+            )}
           />
         </div>
       </div>
@@ -56,16 +57,8 @@ export function Topbar() {
             <DropdownMenuItem onClick={() => toggleLanguage('fr')}>
               <span className="mr-2">🇫🇷</span> Français
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => toggleLanguage('ar')}>
-              <span className="mr-2">🇲🇦</span> العربية
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {/* Theme Toggle */}
-        <Button variant="ghost" size="icon" onClick={toggleTheme}>
-          {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-        </Button>
 
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">
@@ -87,7 +80,19 @@ export function Topbar() {
           <DropdownMenuContent align={isRTL ? 'start' : 'end'} className="w-48">
             <DropdownMenuItem>{t('user.profile')}</DropdownMenuItem>
             <DropdownMenuItem>{t('user.settings')}</DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">{t('user.logout')}</DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive"
+              onSelect={async (e) => {
+                e.preventDefault();
+                const { error } = await signOut();
+                navigate('/auth', { replace: true });
+                if (error) {
+                  toast.error(`Erreur lors de la déconnexion: ${error.message}`);
+                }
+              }}
+            >
+              {t('user.logout')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
@@ -16,6 +16,8 @@ import {
   FileText,
   ShoppingCart,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   LogOut,
   Palmtree,
   HardHat,
@@ -23,6 +25,8 @@ import {
   PackageCheck,
   BookOpen,
   UserCog,
+  KeyRound,
+  Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,6 +35,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import { useRevisionAlerts } from '@/hooks/useRevisions';
 
+interface SidebarProps {
+  collapsed?: boolean;
+  onToggle?: () => void;
+}
+
 const navItems = [
   { key: 'dashboard', icon: LayoutDashboard, path: '/', module: 'dashboard' },
   { key: 'vehicles', icon: Truck, path: '/vehicles', module: 'vehicles' },
@@ -38,6 +47,7 @@ const navItems = [
   { key: 'personnel', icon: UserCog, path: '/personnel', module: 'personnel' },
   { key: 'liveMap', icon: MapPin, path: '/live-map', module: 'live_map' },
   { key: 'missions', icon: Package, path: '/missions', module: 'missions' },
+  { key: 'rental', icon: KeyRound, path: '/location-vehicules', module: 'rental' },
   { key: 'transportBTP', icon: HardHat, path: '/transport-btp', module: 'transport_btp' },
   { key: 'transportTouristique', icon: Palmtree, path: '/transport-touristique', module: 'transport_touristique' },
   { key: 'transportVoyageurs', icon: Bus, path: '/transport-voyageurs', module: 'transport_voyageurs' },
@@ -53,13 +63,15 @@ const navItems = [
   { key: 'comptabilite', icon: BookOpen, path: '/comptabilite', module: 'comptabilite' },
   { key: 'finance', icon: DollarSign, path: '/finance', module: 'finance' },
   { key: 'reports', icon: FileText, path: '/reports', module: 'reports' },
+  { key: 'societe', icon: Building2, path: '/societe', module: 'societe' },
   { key: 'alerts', icon: Bell, path: '/alerts', module: 'alerts', badge: 4 },
   { key: 'settings', icon: Settings, path: '/settings' },
 ];
 
-export function Sidebar() {
+export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const { t, i18n } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const isRTL = i18n.language === 'ar';
   const { user, signOut } = useAuth();
   const { toast } = useToast();
@@ -69,10 +81,11 @@ export function Sidebar() {
 
   const handleSignOut = async () => {
     const { error } = await signOut();
+    navigate('/auth', { replace: true });
     if (error) {
       toast({
-        title: 'خطأ',
-        description: 'حدث خطأ أثناء تسجيل الخروج',
+        title: 'Erreur',
+        description: `Erreur lors de la déconnexion: ${error.message}`,
         variant: 'destructive',
       });
     }
@@ -89,41 +102,60 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed top-0 h-screen w-64 bg-sidebar border-sidebar-border flex flex-col z-50',
+        'fixed top-0 h-screen flex flex-col z-50 border border-slate-900/60 dark:border-sidebar-border/80 bg-gradient-to-b from-slate-950/95 via-slate-900/95 to-slate-950/95 backdrop-blur-md shadow-xl transition-all duration-300',
+        collapsed ? 'w-20' : 'w-64',
         isRTL ? 'right-0 border-l' : 'left-0 border-r'
       )}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center px-6 border-b border-sidebar-border">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-lg flex items-center justify-center bg-transparent">
-            <img src="/Parc_Gps_logo_transparent-10.png" alt="Parc gps" className="w-14 h-14 object-contain" />
+      <div className="h-16 flex items-center px-4 border-b border-sidebar-border/60">
+        <div className="flex items-center gap-3 flex-1">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/70 shadow-sm">
+            <img src="/Parc_Gps_logo_transparent-10.png" alt="Parc gps" className="w-8 h-8 object-contain" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-sidebar-foreground">Parc gps</h1>
-            <p className="text-[10px] text-sidebar-muted uppercase tracking-wider">Maroc</p>
-          </div>
+          {!collapsed && (
+            <div>
+              <h1 className="text-base font-bold text-sidebar-foreground">Parc gps</h1>
+              <p className="text-[10px] text-sidebar-muted uppercase tracking-wider">Maroc</p>
+            </div>
+          )}
         </div>
+        {onToggle && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-sidebar-muted hover:text-sidebar-foreground"
+            onClick={onToggle}
+          >
+            {isRTL ? (
+              collapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />
+            ) : (
+              collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />
+            )}
+          </Button>
+        )}
       </div>
 
       {/* Company Selector */}
-      <div className="px-4 py-4 border-b border-sidebar-border">
-        <button className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/80 transition-colors">
+      <div className="px-3 py-3 border-b border-sidebar-border/60">
+        <button className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-sidebar-accent/70 hover:bg-sidebar-accent/90 transition-colors">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center">
               <span className="text-xs font-semibold text-primary">TM</span>
             </div>
-            <div className={cn('text-left', isRTL && 'text-right')}>
-              <p className="text-sm font-medium text-sidebar-foreground">Trans Maroc SARL</p>
-              <p className="text-xs text-sidebar-muted">6 véhicules</p>
-            </div>
+            {!collapsed && (
+              <div className={cn('text-left', isRTL && 'text-right')}>
+                <p className="text-sm font-medium text-sidebar-foreground">Trans Maroc SARL</p>
+                <p className="text-xs text-sidebar-muted">6 véhicules</p>
+              </div>
+            )}
           </div>
-          <ChevronDown className="w-4 h-4 text-sidebar-muted" />
+          {!collapsed && <ChevronDown className="w-4 h-4 text-sidebar-muted" />}
         </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 scrollbar-thin">
+      <nav className="flex-1 overflow-y-auto py-4 px-2 scrollbar-thin">
         <ul className="space-y-1">
           {computedNavItems.map((item) => {
             const isActive = location.pathname === item.path;
@@ -135,11 +167,14 @@ export function Sidebar() {
                   to={item.path}
                   className={cn(
                     'nav-item relative',
+                    collapsed && 'justify-center',
                     isActive && 'nav-item-active'
                   )}
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
-                  <span className="flex-1">{t(`nav.${item.key}`)}</span>
+                  {!collapsed && (
+                    <span className="flex-1 truncate">{t(`nav.${item.key}`)}</span>
+                  )}
                   {item.badge && (
                     <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-accent text-accent-foreground text-xs font-medium">
                       {item.badge}
@@ -161,25 +196,27 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-3 px-2">
+      <div className="p-4 border-t border-sidebar-border/60">
+        <div className={cn('flex items-center gap-3 px-2', collapsed && 'justify-center')}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-info flex items-center justify-center">
             <span className="text-xs font-bold text-white">
               {user?.email?.substring(0, 2).toUpperCase() || 'U'}
             </span>
           </div>
-          <div className={cn('flex-1 min-w-0', isRTL && 'text-right')}>
-            <p className="text-sm font-medium text-sidebar-foreground truncate">
-              {user?.email || 'مستخدم'}
-            </p>
-            <p className="text-xs text-sidebar-muted">مدير</p>
-          </div>
+          {!collapsed && (
+            <div className={cn('flex-1 min-w-0', isRTL && 'text-right')}>
+              <p className="text-sm font-medium text-sidebar-foreground truncate">
+                {user?.email || 'Utilisateur'}
+              </p>
+              <p className="text-xs text-sidebar-muted">Administrateur</p>
+            </div>
+          )}
           <Button
             variant="ghost"
             size="icon"
             onClick={handleSignOut}
             className="h-8 w-8 text-sidebar-muted hover:text-destructive"
-            title="تسجيل الخروج"
+            title="Déconnexion"
           >
             <LogOut className="w-4 h-4" />
           </Button>

@@ -18,7 +18,7 @@ export function CashRegistersList() {
   );
 
   return (
-    <Card>
+    <Card className="dashboard-panel">
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Liste des Caisses</CardTitle>

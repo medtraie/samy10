@@ -19,6 +19,18 @@ export type PaymentUpdate = Database['public']['Tables']['finance_payments']['Up
 
 export type CashTransaction = Database['public']['Tables']['finance_cash_transactions']['Row'];
 
+export interface FinancePaymentsFilters {
+  paymentType?: 'income' | 'expense';
+  fromDate?: string;
+  toDate?: string;
+  status?: string;
+  paymentMethod?: string;
+  cashRegisterId?: string;
+  bankAccountId?: string;
+  category?: string;
+  search?: string;
+}
+
 // ─── Cash Registers Hooks ───────────────────────────────────────────────────
 // ... existing code ...
 
@@ -111,6 +123,62 @@ export function usePayments() {
   });
 }
 
+export function useFinancePayments(filters: FinancePaymentsFilters = {}) {
+  const {
+    paymentType,
+    fromDate,
+    toDate,
+    status,
+    paymentMethod,
+    cashRegisterId,
+    bankAccountId,
+    category,
+    search,
+  } = filters;
+
+  return useQuery({
+    queryKey: [
+      'finance_payments',
+      paymentType || null,
+      fromDate || null,
+      toDate || null,
+      status || null,
+      paymentMethod || null,
+      cashRegisterId || null,
+      bankAccountId || null,
+      category || null,
+      search || null,
+    ],
+    queryFn: async () => {
+      let query = supabase
+        .from('finance_payments')
+        .select('*, cash_register:finance_cash_registers(name), bank_account:finance_bank_accounts(bank_name)')
+        .order('payment_date', { ascending: false });
+
+      if (paymentType) query = query.eq('payment_type', paymentType);
+      if (fromDate) query = query.gte('payment_date', fromDate);
+      if (toDate) query = query.lte('payment_date', toDate);
+      if (status) query = query.eq('status', status);
+      if (paymentMethod) query = query.eq('payment_method', paymentMethod);
+      if (cashRegisterId) query = query.eq('cash_register_id', cashRegisterId);
+      if (bankAccountId) query = query.eq('bank_account_id', bankAccountId);
+      if (category) query = query.ilike('category', category);
+      if (search) {
+        const q = search.replaceAll(',', ' ').trim();
+        if (q) {
+          query = query.or(
+            `entity_name.ilike.%${q}%,reference_number.ilike.%${q}%,notes.ilike.%${q}%,category.ilike.%${q}%,subcategory.ilike.%${q}%`,
+          );
+        }
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function usePaymentMutation() {
   const queryClient = useQueryClient();
 
@@ -129,10 +197,43 @@ export function usePaymentMutation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['finance_payments'] });
       queryClient.invalidateQueries({ queryKey: ['cash_registers'] });
       queryClient.invalidateQueries({ queryKey: ['bank_accounts'] });
     },
   });
 
-  return { createPayment };
+  const updatePayment = useMutation({
+    mutationFn: async ({ id, ...updates }: PaymentUpdate & { id: string }) => {
+      const { data, error } = await supabase
+        .from('finance_payments')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['finance_payments'] });
+      queryClient.invalidateQueries({ queryKey: ['cash_registers'] });
+      queryClient.invalidateQueries({ queryKey: ['bank_accounts'] });
+    },
+  });
+
+  const deletePayment = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('finance_payments').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['finance_payments'] });
+      queryClient.invalidateQueries({ queryKey: ['cash_registers'] });
+      queryClient.invalidateQueries({ queryKey: ['bank_accounts'] });
+    },
+  });
+
+  return { createPayment, updatePayment, deletePayment };
 }

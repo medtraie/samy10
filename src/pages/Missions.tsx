@@ -27,6 +27,7 @@ import { toast } from '@/hooks/use-toast';
 import { MissionKanban } from '@/components/missions/MissionKanban';
 import { MissionCalendar } from '@/components/missions/MissionCalendar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
 
 const statusFilters = [
   { value: 'all', label: 'Toutes', icon: FileText },
@@ -140,6 +141,7 @@ const formatCurrency = (amount: number) =>
 
 export default function Missions() {
   const { t } = useTranslation();
+  const { data: companyProfile } = useTourismCompanyProfile();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState('list');
@@ -298,6 +300,9 @@ export default function Missions() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">{t('nav.missions')}</h1>
             <p className="text-muted-foreground">Gestion des missions de transport</p>
+            <p className="text-sm text-muted-foreground">
+              Société: {companyProfile?.company_name || 'Non renseignée'}
+            </p>
           </div>
           <Button onClick={openNewMissionForm} className="gap-2">
             <Plus className="h-4 w-4" />
@@ -307,7 +312,7 @@ export default function Missions() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">
@@ -320,7 +325,7 @@ export default function Missions() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
@@ -333,7 +338,7 @@ export default function Missions() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
@@ -346,7 +351,7 @@ export default function Missions() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
@@ -359,7 +364,7 @@ export default function Missions() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-muted">
@@ -372,7 +377,7 @@ export default function Missions() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
@@ -436,7 +441,7 @@ export default function Missions() {
 
           <TabsContent value="list" className="space-y-4">
             {filteredMissions.length === 0 ? (
-              <Card>
+              <Card className="dashboard-panel">
                 <CardContent className="py-12 text-center">
                   <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="font-medium text-foreground mb-1">Aucune mission trouvée</h3>

@@ -111,7 +111,7 @@ export function MissionCard({ mission, onView, onEdit, onStatusChange, onDelete 
     new Intl.NumberFormat('fr-MA', { minimumFractionDigits: 0 }).format(amount) + ' MAD';
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="dashboard-panel">
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-4">
           <div>
@@ -163,7 +163,6 @@ export function MissionCard({ mission, onView, onEdit, onStatusChange, onDelete 
           </DropdownMenu>
         </div>
 
-        {/* Route */}
         <div className="flex items-center gap-2 text-sm mb-4 p-3 bg-muted/50 rounded-lg">
           <MapPin className="h-4 w-4 text-emerald-600 shrink-0" />
           <span className="font-medium truncate">{mission.origin}</span>

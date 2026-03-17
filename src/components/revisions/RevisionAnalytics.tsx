@@ -59,7 +59,7 @@ export function RevisionAnalytics({ revisions }: RevisionAnalyticsProps) {
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-l-4 border-l-primary shadow-sm hover:shadow-md transition-all">
+        <Card className="dashboard-panel p-4">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Coût Total</CardTitle>
             <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -72,7 +72,7 @@ export function RevisionAnalytics({ revisions }: RevisionAnalyticsProps) {
           </CardContent>
         </Card>
         
-        <Card className="border-l-4 border-l-destructive shadow-sm hover:shadow-md transition-all">
+        <Card className="dashboard-panel p-4">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">En Retard</CardTitle>
             <div className="h-8 w-8 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -85,7 +85,7 @@ export function RevisionAnalytics({ revisions }: RevisionAnalyticsProps) {
           </CardContent>
         </Card>
         
-        <Card className="border-l-4 border-l-amber-500 shadow-sm hover:shadow-md transition-all">
+        <Card className="dashboard-panel p-4">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">À Faire Bientôt</CardTitle>
             <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center">
@@ -98,7 +98,7 @@ export function RevisionAnalytics({ revisions }: RevisionAnalyticsProps) {
           </CardContent>
         </Card>
         
-        <Card className="border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-all">
+        <Card className="dashboard-panel p-4">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Terminées</CardTitle>
             <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
@@ -114,7 +114,7 @@ export function RevisionAnalytics({ revisions }: RevisionAnalyticsProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Cost by Vehicle Chart */}
-        <Card className="col-span-1 lg:col-span-2 shadow-sm hover:shadow-md transition-all">
+        <Card className="col-span-1 lg:col-span-2 dashboard-panel p-4">
           <CardHeader>
             <CardTitle>Coût par Véhicule (Top 10)</CardTitle>
             <CardDescription>Les véhicules les plus coûteux en maintenance</CardDescription>
@@ -154,7 +154,7 @@ export function RevisionAnalytics({ revisions }: RevisionAnalyticsProps) {
         </Card>
 
         {/* Status Distribution Pie Chart */}
-        <Card className="col-span-1 shadow-sm hover:shadow-md transition-all">
+        <Card className="col-span-1 dashboard-panel p-4">
           <CardHeader>
             <CardTitle>Répartition par Statut</CardTitle>
             <CardDescription>État actuel du parc</CardDescription>
@@ -196,7 +196,7 @@ export function RevisionAnalytics({ revisions }: RevisionAnalyticsProps) {
       </div>
 
       {/* Monthly Trend Chart */}
-      <Card className="shadow-sm hover:shadow-md transition-all">
+      <Card className="dashboard-panel p-4">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>

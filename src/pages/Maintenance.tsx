@@ -260,7 +260,7 @@ export default function Maintenance() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-muted">
@@ -273,7 +273,7 @@ export default function Maintenance() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
@@ -286,7 +286,7 @@ export default function Maintenance() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
@@ -299,7 +299,7 @@ export default function Maintenance() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">
@@ -349,7 +349,7 @@ export default function Maintenance() {
             </div>
 
             {filteredWorkOrders.length === 0 ? (
-              <Card>
+              <Card className="dashboard-panel">
                 <CardContent className="py-12 text-center">
                   <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="font-medium text-foreground mb-1">Aucun ordre de travail</h3>

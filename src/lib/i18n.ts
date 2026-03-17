@@ -13,6 +13,7 @@ const resources = {
         revisions: 'Révisions',
         liveMap: 'Carte Live',
         missions: 'Missions',
+        rental: 'Location Véhicules',
         transportBTP: 'Transport BTP',
         transportTouristique: 'Transport Touristique',
         transportVoyageurs: 'Transport Voyageurs',
@@ -29,6 +30,7 @@ const resources = {
         settings: 'Paramètres',
         alerts: 'Alertes',
         reports: 'Rapports',
+        societe: 'Société',
       },
       achats: {
         title: 'Achats',
@@ -56,6 +58,8 @@ const resources = {
         cashRegisters: 'Gestion multi-caisses',
         cashBalance: 'Solde caisse en temps réel',
         payments: 'Règlements client/fournisseur',
+        expenses: 'Dépenses',
+        revenues: 'Recettes',
         bankJournal: 'Chéquiers et Journal bancaire',
       },
       // Dashboard
@@ -192,6 +196,7 @@ const resources = {
         revisions: 'المراجعات',
         liveMap: 'الخريطة المباشرة',
         missions: 'المهمات',
+        rental: 'كراء السيارات',
         transportBTP: 'نقل البناء',
         transportTouristique: 'النقل السياحي',
         transportVoyageurs: 'نقل المسافرين',
@@ -207,6 +212,7 @@ const resources = {
         settings: 'الإعدادات',
         alerts: 'التنبيهات',
         reports: 'التقارير',
+        societe: 'الشركة',
       },
       achats: {
         title: 'المشتريات',
@@ -234,6 +240,8 @@ const resources = {
         cashRegisters: 'إدارة الصناديق المتعددة',
         cashBalance: 'رصيد الصندوق اللحظي',
         payments: 'تسويات العملاء والموردين',
+        expenses: 'المصاريف',
+        revenues: 'المداخيل',
         bankJournal: 'دفاتر الشيكات والسجل البنكي',
       },
       // Dashboard

@@ -76,7 +76,7 @@ export function RevisionsList({ revisions: external }: RevisionsListProps) {
   };
 
   return (
-    <Card>
+    <Card className="dashboard-panel">
       <CardContent className="p-0">
         <Table>
           <TableHeader>

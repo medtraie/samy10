@@ -851,7 +851,7 @@ export default function SupplierDetail() {
             <ArrowLeft className="w-4 h-4" />
             Retour au stock
           </Button>
-          <Card>
+          <Card className="dashboard-panel">
             <CardContent className="p-6">
               <p className="text-muted-foreground">Fournisseur introuvable.</p>
             </CardContent>
@@ -899,7 +899,7 @@ export default function SupplierDetail() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+          <Card className="kpi-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Commandes</CardTitle>
               <Truck className="h-4 w-4 text-muted-foreground" />
@@ -911,7 +911,7 @@ export default function SupplierDetail() {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="kpi-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Factures</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -923,7 +923,7 @@ export default function SupplierDetail() {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="kpi-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Articles fournis</CardTitle>
               <Package className="h-4 w-4 text-muted-foreground" />
@@ -933,7 +933,7 @@ export default function SupplierDetail() {
               <p className="text-xs text-muted-foreground">Références actives</p>
             </CardContent>
           </Card>
-          <Card className="bg-destructive/10 border-destructive/20">
+          <Card className="kpi-card kpi-card-destructive">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-destructive">Dette actuelle</CardTitle>
               <Clock className="h-4 w-4 text-destructive" />
@@ -1006,7 +1006,7 @@ export default function SupplierDetail() {
         </TabsContent>
 
         <TabsContent value="overview" className="space-y-4">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle>Résumé financier</CardTitle>
               </CardHeader>
@@ -1042,7 +1042,7 @@ export default function SupplierDetail() {
           </TabsContent>
 
           <TabsContent value="invoices">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle>Factures fournisseur</CardTitle>
               </CardHeader>
@@ -1133,7 +1133,7 @@ export default function SupplierDetail() {
           </TabsContent>
 
           <TabsContent value="orders">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle>Bons de commande</CardTitle>
               </CardHeader>
@@ -1177,7 +1177,7 @@ export default function SupplierDetail() {
           </TabsContent>
 
           <TabsContent value="deliveries">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle>Bons de livraison</CardTitle>
               </CardHeader>

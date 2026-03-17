@@ -783,7 +783,7 @@ export default function Oil() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[320px,1fr] gap-6">
-          <Card className="flex flex-col items-center justify-center py-6">
+          <Card className="dashboard-panel flex flex-col items-center justify-center py-6">
             <CardHeader className="w-full flex items-start justify-between pb-4 space-y-0">
               <div className="space-y-1">
                 <CardTitle className="text-lg">
@@ -826,7 +826,7 @@ export default function Oil() {
 
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card>
+              <Card className="dashboard-panel">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <Droplets className="h-4 w-4 text-primary" />
@@ -842,7 +842,7 @@ export default function Oil() {
                   </p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="dashboard-panel">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <Droplets className="h-4 w-4 text-primary" />
@@ -858,7 +858,7 @@ export default function Oil() {
                   </p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="dashboard-panel">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <Droplets className="h-4 w-4 text-primary" />

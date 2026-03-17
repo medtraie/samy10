@@ -34,10 +34,12 @@ export function StockItemCard({ item, onEdit, onRestock }: StockItemCardProps) {
   const categoryLabel = categoryLabels[item.category] || item.category;
 
   return (
-    <Card className={cn(
-      'hover:shadow-md transition-shadow animate-in fade-in zoom-in-95 duration-300',
-      isLowStock && 'border-destructive/50 bg-destructive/5'
-    )}>
+    <Card
+      className={cn(
+        'dashboard-panel animate-in fade-in zoom-in-95 duration-300',
+        isLowStock && 'border-destructive/50'
+      )}
+    >
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">

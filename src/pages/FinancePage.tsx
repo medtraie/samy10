@@ -2,11 +2,13 @@ import { useTranslation } from 'react-i18next';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Wallet, DollarSign, CreditCard, BookOpen } from 'lucide-react';
+import { Wallet, DollarSign, CreditCard, BookOpen, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 
 import { CashRegistersList } from '@/components/finance/CashRegistersList';
 import { CashTransactionsList } from '@/components/finance/CashTransactionsList';
 import { PaymentsList } from '@/components/finance/PaymentsList';
+import { ExpensesList } from '@/components/finance/ExpensesList';
+import { RevenuesList } from '@/components/finance/RevenuesList';
 
 export default function FinancePage() {
   const { t } = useTranslation();
@@ -20,11 +22,31 @@ export default function FinancePage() {
         </div>
 
         <Tabs defaultValue="cash_registers" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4 max-w-4xl">
-            <TabsTrigger value="cash_registers">{t('finance.cashRegisters')}</TabsTrigger>
-            <TabsTrigger value="cash_balance">{t('finance.cashBalance')}</TabsTrigger>
-            <TabsTrigger value="payments">{t('finance.payments')}</TabsTrigger>
-            <TabsTrigger value="bank_journal">{t('finance.bankJournal')}</TabsTrigger>
+          <TabsList className="flex flex-wrap gap-1">
+            <TabsTrigger value="cash_registers" className="gap-2">
+              <Wallet className="h-4 w-4" />
+              {t('finance.cashRegisters')}
+            </TabsTrigger>
+            <TabsTrigger value="cash_balance" className="gap-2">
+              <DollarSign className="h-4 w-4" />
+              {t('finance.cashBalance')}
+            </TabsTrigger>
+            <TabsTrigger value="payments" className="gap-2">
+              <CreditCard className="h-4 w-4" />
+              {t('finance.payments')}
+            </TabsTrigger>
+            <TabsTrigger value="expenses" className="gap-2">
+              <ArrowUpRight className="h-4 w-4" />
+              {t('finance.expenses')}
+            </TabsTrigger>
+            <TabsTrigger value="revenues" className="gap-2">
+              <ArrowDownLeft className="h-4 w-4" />
+              {t('finance.revenues')}
+            </TabsTrigger>
+            <TabsTrigger value="bank_journal" className="gap-2">
+              <BookOpen className="h-4 w-4" />
+              {t('finance.bankJournal')}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="cash_registers">
@@ -38,9 +60,17 @@ export default function FinancePage() {
           <TabsContent value="payments">
             <PaymentsList />
           </TabsContent>
+
+          <TabsContent value="expenses">
+            <ExpensesList />
+          </TabsContent>
+
+          <TabsContent value="revenues">
+            <RevenuesList />
+          </TabsContent>
           
           <TabsContent value="bank_journal">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5" />

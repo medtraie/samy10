@@ -21,12 +21,79 @@ export function FinanceSummary() {
     p.reference_number?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const totalCurrentBalance = registers.reduce(
+    (sum, reg) => sum + (reg.current_balance || 0),
+    0,
+  );
+
+  const totalIncome = payments.reduce(
+    (sum, p) => sum + (p.payment_type === 'income' ? p.amount : 0),
+    0,
+  );
+
+  const totalExpense = payments.reduce(
+    (sum, p) => sum + (p.payment_type !== 'income' ? p.amount : 0),
+    0,
+  );
+
+  const netCashFlow = totalIncome - totalExpense;
+
   return (
     <div className="space-y-6">
-      {/* Real-time Balances */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="kpi-card">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">
+                Solde total des caisses
+              </p>
+              <p className="text-3xl font-bold text-foreground tracking-tight">
+                {totalCurrentBalance.toLocaleString()} MAD
+              </p>
+            </div>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-primary/10 text-primary">
+              <Wallet className="w-6 h-6" />
+            </div>
+          </div>
+        </div>
+        <div className="kpi-card kpi-card-success">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">
+                Encaissements
+              </p>
+              <p className="text-3xl font-bold text-foreground tracking-tight">
+                {totalIncome.toLocaleString()} MAD
+              </p>
+            </div>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-success/10 text-success">
+              <ArrowDownLeft className="w-6 h-6" />
+            </div>
+          </div>
+        </div>
+        <div className="kpi-card kpi-card-destructive">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">
+                Décaissements nets
+              </p>
+              <p className="text-3xl font-bold text-foreground tracking-tight">
+                {totalExpense.toLocaleString()} MAD
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Flux net: {netCashFlow.toLocaleString()} MAD
+              </p>
+            </div>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-destructive/10 text-destructive">
+              <ArrowUpRight className="w-6 h-6" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {registers.map((reg) => (
-          <Card key={reg.id} className="bg-primary/5 border-primary/20">
+          <Card key={reg.id} className="dashboard-panel">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-primary" />
@@ -46,7 +113,7 @@ export function FinanceSummary() {
       </div>
 
       {/* Payments List */}
-      <Card>
+      <Card className="dashboard-panel">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Règlements Récents</CardTitle>

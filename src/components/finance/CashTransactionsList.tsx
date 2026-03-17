@@ -29,7 +29,7 @@ export function CashTransactionsList() {
         </div>
       </div>
 
-      <Card>
+      <Card className="dashboard-panel">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Wallet className="h-5 w-5" />

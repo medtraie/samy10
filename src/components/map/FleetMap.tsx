@@ -11,7 +11,7 @@ export interface MapVehicle {
   plate: string;
   brand: string;
   model: string;
-  status: 'active' | 'inactive' | 'maintenance';
+  status: 'active' | 'inactive' | 'maintenance' | 'available' | 'rented';
   mileage: number;
   driver?: string | null;
   lastPosition?: {
@@ -99,6 +99,10 @@ const FleetMap: React.FC<FleetMapProps> = ({ vehicles, selectedVehicleId, onVehi
           <div class="w-10 h-10 rounded-full flex items-center justify-center shadow-lg cursor-pointer transition-transform hover:scale-110 ${
             vehicle.status === 'active' 
               ? 'bg-emerald-500' 
+              : vehicle.status === 'available'
+                ? 'bg-emerald-500'
+                : vehicle.status === 'rented'
+                  ? 'bg-red-500'
               : vehicle.status === 'maintenance' 
                 ? 'bg-amber-500' 
                 : 'bg-slate-500'
@@ -107,7 +111,13 @@ const FleetMap: React.FC<FleetMapProps> = ({ vehicles, selectedVehicleId, onVehi
               <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
             </svg>
           </div>
-          ${vehicle.status === 'active' ? '<div class="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full animate-ping"></div>' : ''}
+          ${
+            vehicle.status === 'active' || vehicle.status === 'available'
+              ? '<div class="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full animate-ping"></div>'
+              : vehicle.status === 'rented'
+                ? '<div class="absolute -top-1 -right-1 w-3 h-3 bg-red-400 rounded-full animate-ping"></div>'
+                : ''
+          }
           <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-medium px-2 py-0.5 bg-slate-900 text-white rounded">
             ${vehicle.plate}
           </div>

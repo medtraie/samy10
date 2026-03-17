@@ -137,27 +137,27 @@ export default function Vehicles() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          <div className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="dashboard-panel p-4">
             <div className="text-2xl font-bold text-foreground">{totalVehicles}</div>
             <div className="text-sm text-muted-foreground">Total véhicules</div>
           </div>
-          <div className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="dashboard-panel p-4">
             <div className="text-2xl font-bold text-success">{onlineCount}</div>
             <div className="text-sm text-muted-foreground">En ligne</div>
           </div>
-          <div className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="dashboard-panel p-4">
             <div className="text-2xl font-bold text-muted-foreground">{offlineCount}</div>
             <div className="text-sm text-muted-foreground">Hors ligne</div>
           </div>
-          <div className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="dashboard-panel p-4">
             <div className="text-2xl font-bold text-primary">{activeCount}</div>
             <div className="text-sm text-muted-foreground">Actifs</div>
           </div>
-          <div className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="dashboard-panel p-4">
             <div className="text-2xl font-bold text-info">{movingCount}</div>
             <div className="text-sm text-muted-foreground">En mouvement</div>
           </div>
-          <div className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="dashboard-panel p-4">
             <div className="text-2xl font-bold text-destructive">{lowFuelCount}</div>
             <div className="text-sm text-muted-foreground">Carburant bas</div>
           </div>
@@ -179,7 +179,7 @@ export default function Vehicles() {
         </div>
 
         {/* Filters Bar */}
-        <div className="bg-card rounded-xl border border-border p-4 hover:shadow-md transition-shadow">
+        <div className="dashboard-panel p-4">
           <div className="flex flex-wrap items-center gap-3">
             {/* Search */}
             <div className="flex-1 min-w-[240px]">

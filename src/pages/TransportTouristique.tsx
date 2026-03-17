@@ -3,7 +3,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Calendar, Users, FileText, DollarSign, Map } from 'lucide-react';
+import { Plus, Calendar, Users, FileText, DollarSign, Map, Building2 } from 'lucide-react';
 
 import { ClientForm } from '@/components/tourism/ClientForm';
 import { ClientsList } from '@/components/tourism/ClientsList';
@@ -13,6 +13,7 @@ import { DispatchingCalendar } from '@/components/tourism/DispatchingCalendar';
 import { RouteSheet } from '@/components/tourism/RouteSheet';
 import { InvoiceForm } from '@/components/tourism/InvoiceForm';
 import { InvoicesList } from '@/components/tourism/InvoicesList';
+import { TourismCompanyForm } from '@/components/tourism/TourismCompanyForm';
 
 export default function TransportTouristique() {
   const [activeTab, setActiveTab] = useState('planning');
@@ -66,7 +67,7 @@ export default function TransportTouristique() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="planning" className="flex items-center gap-2">
               <Calendar className="w-4 h-4" />
               <span className="hidden sm:inline">Planification</span>
@@ -86,6 +87,10 @@ export default function TransportTouristique() {
             <TabsTrigger value="clients" className="flex items-center gap-2">
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Clients</span>
+            </TabsTrigger>
+            <TabsTrigger value="company" className="flex items-center gap-2">
+              <Building2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Société</span>
             </TabsTrigger>
           </TabsList>
 
@@ -125,6 +130,17 @@ export default function TransportTouristique() {
 
           <TabsContent value="clients" className="mt-6">
             <ClientsList />
+          </TabsContent>
+
+          <TabsContent value="company" className="mt-6">
+            <div className="max-w-3xl space-y-4">
+              <h2 className="text-lg font-semibold">Profil de la société (Transport Touristique)</h2>
+              <p className="text-sm text-muted-foreground">
+                Ces informations seront utilisées dans l&apos;ordre de mission (PDF) : entête, coordonnées, mentions
+                légales et logo.
+              </p>
+              <TourismCompanyForm />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

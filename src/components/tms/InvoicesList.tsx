@@ -13,6 +13,7 @@ import autoTable from 'jspdf-autotable';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
 
 const STATUS_COLORS: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   draft: 'secondary', sent: 'default', paid: 'outline', cancelled: 'destructive',
@@ -24,6 +25,7 @@ const STATUS_LABELS: Record<string, string> = {
 export function InvoicesList() {
   const { data: invoices = [], isLoading } = useTMSInvoices();
   const { data: orders = [] } = useTMSOrders();
+  const { data: companyProfile } = useTourismCompanyProfile();
   const deleteInvoice = useDeleteTMSInvoice();
   const updateInvoice = useUpdateTMSInvoice();
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -58,7 +60,7 @@ export function InvoicesList() {
     doc.rect(0, 0, 210, 32, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
-    doc.text('Parc gps', 14, 18);
+    doc.text(companyProfile?.company_name || 'Parc gps', 14, 18);
     doc.setFontSize(11);
     doc.text('Facture Transport', 14, 26);
 
@@ -137,7 +139,12 @@ export function InvoicesList() {
     doc.line(14, pageHeight - 18, 196, pageHeight - 18);
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
-    doc.text('Merci pour votre confiance', 14, pageHeight - 10);
+    const contactLine = [companyProfile?.contact_email, companyProfile?.contact_phone].filter(Boolean).join(' | ');
+    const footerLine = [companyProfile?.address, companyProfile?.tax_info].filter(Boolean).join(' | ');
+    doc.text(contactLine || 'Merci pour votre confiance', 14, pageHeight - 10);
+    if (footerLine) {
+      doc.text(footerLine, 14, pageHeight - 5);
+    }
 
     doc.save(`${invoice.invoice_number}.pdf`);
   };

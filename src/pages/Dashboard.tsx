@@ -38,7 +38,7 @@ import {
 } from 'recharts';
 import { Link } from 'react-router-dom';
 
-const COLORS = ['hsl(173, 58%, 39%)', 'hsl(199, 89%, 48%)', 'hsl(25, 95%, 53%)'];
+const COLORS = ['#42e8e0', '#00b4ff', '#56ddA3'];
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -100,7 +100,7 @@ export default function Dashboard() {
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Fuel Consumption Chart */}
-          <div className="lg:col-span-2 bg-card rounded-xl border border-border p-6">
+          <div className="lg:col-span-2 dashboard-panel p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-foreground">{t('dashboard.fuelConsumption')}</h3>
@@ -117,29 +117,29 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={fuelConsumptionByMonth}>
                 <defs>
                   <linearGradient id="colorConsumption" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(173, 58%, 39%)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(173, 58%, 39%)" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#42e8e0" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#42e8e0" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.28)" />
+                <XAxis dataKey="month" stroke="rgba(148,163,184,0.9)" fontSize={12} />
+                <YAxis stroke="rgba(148,163,184,0.9)" fontSize={12} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
+                    backgroundColor: 'rgba(15,23,42,0.96)',
+                    border: '1px solid rgba(148,163,184,0.5)',
                     borderRadius: '8px',
                   }}
                 />
                 <Area
                   type="monotone"
                   dataKey="consumption"
-                  stroke="hsl(173, 58%, 39%)"
-                  strokeWidth={2}
+                  stroke="#42e8e0"
+                  strokeWidth={2.4}
                   fill="url(#colorConsumption)"
                 />
               </AreaChart>
@@ -147,26 +147,26 @@ export default function Dashboard() {
           </div>
 
           {/* Fleet Availability */}
-          <div className="bg-card rounded-xl border border-border p-6">
+          <div className="dashboard-panel p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-foreground">{t('dashboard.fleetAvailability')}</h3>
                 <p className="text-sm text-muted-foreground">Cette semaine</p>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={260}>
               <BarChart data={fleetAvailabilityByDay}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.28)" />
+                <XAxis dataKey="day" stroke="rgba(148,163,184,0.9)" fontSize={12} />
+                <YAxis stroke="rgba(148,163,184,0.9)" fontSize={12} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
+                    backgroundColor: 'rgba(15,23,42,0.96)',
+                    border: '1px solid rgba(148,163,184,0.5)',
                     borderRadius: '8px',
                   }}
                 />
-                <Bar dataKey="available" fill="hsl(173, 58%, 39%)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="available" fill="#42e8e0" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -175,7 +175,7 @@ export default function Dashboard() {
         {/* Bottom Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent Alerts */}
-          <div className="bg-card rounded-xl border border-border p-6">
+          <div className="dashboard-panel p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-foreground">{t('dashboard.recentAlerts')}</h3>
               <Link to="/alerts">
@@ -193,7 +193,7 @@ export default function Dashboard() {
           </div>
 
           {/* Cost by Vehicle */}
-          <div className="bg-card rounded-xl border border-border p-6">
+          <div className="dashboard-panel p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-foreground">{t('dashboard.costByVehicle')}</h3>
@@ -214,28 +214,28 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={260}>
               <BarChart data={costByVehicle} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={10} />
-                <YAxis dataKey="plate" type="category" stroke="hsl(var(--muted-foreground))" fontSize={10} width={80} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.28)" />
+                <XAxis type="number" stroke="rgba(148,163,184,0.9)" fontSize={10} />
+                <YAxis dataKey="plate" type="category" stroke="rgba(148,163,184,0.9)" fontSize={10} width={80} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
+                    backgroundColor: 'rgba(15,23,42,0.96)',
+                    border: '1px solid rgba(148,163,184,0.5)',
                     borderRadius: '8px',
                   }}
                   formatter={(value: number) => [`${value.toLocaleString()} MAD`]}
                 />
-                <Bar dataKey="fuel" stackId="a" fill="hsl(173, 58%, 39%)" />
-                <Bar dataKey="maintenance" stackId="a" fill="hsl(199, 89%, 48%)" />
-                <Bar dataKey="other" stackId="a" fill="hsl(25, 95%, 53%)" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="fuel" stackId="a" fill="#42e8e0" />
+                <Bar dataKey="maintenance" stackId="a" fill="#00b4ff" />
+                <Bar dataKey="other" stackId="a" fill="#56ddA3" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           {/* Recent Missions */}
-          <div className="bg-card rounded-xl border border-border p-6">
+          <div className="dashboard-panel p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-foreground">{t('dashboard.recentMissions')}</h3>
               <Link to="/missions">

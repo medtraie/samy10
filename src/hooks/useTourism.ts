@@ -18,6 +18,7 @@ export interface TourismClient {
 export interface TourismMission {
   id: string;
   reference: string;
+  reference_mission?: string | null;
   client_id: string | null;
   mission_type: 'transfer' | 'excursion' | 'circuit' | 'rental';
   title: string;
@@ -31,10 +32,22 @@ export interface TourismMission {
   end_time: string | null;
   pickup_location: string | null;
   dropoff_location: string | null;
+  start_km?: number | null;
+  end_km?: number | null;
+  total_km?: number | null;
+  meal_amount?: number | null;
+  driver_parking?: number | null;
+  driver_toll?: number | null;
+  driver_misc?: number | null;
+  driver_expenses_total?: number | null;
+  dossier_number?: string | null;
+  mission_number?: string | null;
+  version_number?: string | null;
   status: 'planned' | 'dispatched' | 'in_progress' | 'completed' | 'cancelled';
   priority: 'low' | 'normal' | 'high' | 'urgent';
   notes: string | null;
   driver_instructions: string | null;
+  observations_end_mission?: string | null;
   created_at: string;
   updated_at: string;
   client?: TourismClient;
@@ -215,10 +228,15 @@ export function useUpdateTourismMission() {
         .from('tourism_missions')
         .update(cleanUpdates)
         .eq('id', id)
-        .select()
+        .select(`
+          *,
+          client:tourism_clients(*),
+          driver:drivers(id, name),
+          waypoints:tourism_waypoints(*)
+        `)
         .single();
       if (error) throw error;
-      return data;
+      return data as unknown as TourismMission;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tourism-missions'] });

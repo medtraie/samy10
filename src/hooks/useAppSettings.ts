@@ -9,13 +9,16 @@ export interface ModuleSettings {
   personnel: boolean;
   live_map: boolean;
   missions: boolean;
+  rental: boolean;
   transport_btp: boolean;
   transport_touristique: boolean;
   transport_voyageurs: boolean;
   transport_tms: boolean;
+  clients: boolean;
+  revisions: boolean;
   fuel: boolean;
   citerne: boolean;
-   oil: boolean;
+  oil: boolean;
   maintenance: boolean;
   stock: boolean;
   achats: boolean;
@@ -23,6 +26,7 @@ export interface ModuleSettings {
   finance: boolean;
   reports: boolean;
   alerts: boolean;
+  societe: boolean;
 }
 
 const DEFAULT_SETTINGS: ModuleSettings = {
@@ -32,10 +36,13 @@ const DEFAULT_SETTINGS: ModuleSettings = {
   personnel: true,
   live_map: true,
   missions: true,
+  rental: true,
   transport_btp: true,
   transport_touristique: true,
   transport_voyageurs: true,
   transport_tms: true,
+  clients: true,
+  revisions: true,
   fuel: true,
   citerne: true,
   oil: true,
@@ -46,6 +53,7 @@ const DEFAULT_SETTINGS: ModuleSettings = {
   finance: true,
   reports: true,
   alerts: true,
+  societe: true,
 };
 
 export function useAppSettings() {
@@ -61,13 +69,13 @@ export function useAppSettings() {
         .maybeSingle();
 
       if (error) {
-        console.error('Error fetching settings:', error);
         return DEFAULT_SETTINGS;
       }
       
       if (!data) return DEFAULT_SETTINGS;
       
-      return data.value as unknown as ModuleSettings;
+      const stored = (data.value || {}) as Partial<ModuleSettings>;
+      return { ...DEFAULT_SETTINGS, ...stored } as ModuleSettings;
     },
   });
 
@@ -97,5 +105,55 @@ export function useAppSettings() {
     moduleSettings,
     isLoading,
     updateModuleSettings,
+  };
+}
+
+export function useModulesUnlockCode() {
+  const queryClient = useQueryClient();
+
+  const { data: code, isLoading } = useQuery({
+    queryKey: ['app_settings', 'modules_unlock_code'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'modules_unlock_code')
+        .maybeSingle();
+
+      if (error) return null;
+      if (!data) return null;
+      return (data.value as any) as string;
+    },
+  });
+
+  const updateCode = useMutation({
+    mutationFn: async (nextCode: string | null) => {
+      const value = nextCode && nextCode.trim() ? nextCode.trim() : null;
+      const { error } = await supabase
+        .from('app_settings')
+        .upsert(
+          {
+            key: 'modules_unlock_code',
+            value: value as any,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' }
+        );
+      if (error) throw error;
+      return value;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app_settings'] });
+      toast.success('Code mis à jour');
+    },
+    onError: (error) => {
+      toast.error('Erreur lors de la mise à jour: ' + error.message);
+    },
+  });
+
+  return {
+    code,
+    isLoading,
+    updateCode,
   };
 }

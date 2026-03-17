@@ -30,7 +30,7 @@ export default function PersonnelPage() {
           </TabsList>
 
           <TabsContent value="personnel_list">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Users className="h-5 w-5" />
@@ -47,7 +47,7 @@ export default function PersonnelPage() {
           </TabsContent>
 
           <TabsContent value="admin_files">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
@@ -64,7 +64,7 @@ export default function PersonnelPage() {
           </TabsContent>
 
           <TabsContent value="driving_licenses">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="h-5 w-5" />
@@ -81,7 +81,7 @@ export default function PersonnelPage() {
           </TabsContent>
 
           <TabsContent value="medical_visits">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Stethoscope className="h-5 w-5" />
@@ -98,7 +98,7 @@ export default function PersonnelPage() {
           </TabsContent>
 
           <TabsContent value="infractions">
-            <Card>
+            <Card className="dashboard-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5" />
