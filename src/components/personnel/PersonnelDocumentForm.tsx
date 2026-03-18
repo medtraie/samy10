@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { usePersonnelDocumentMutation, PersonnelDocument, usePersonnel } from '@/hooks/usePersonnel';
+import { usePersonnelDocumentMutation, PersonnelDocument, usePersonnelSelectOptions } from '@/hooks/usePersonnel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -28,7 +28,7 @@ interface PersonnelDocumentFormProps {
 
 export function PersonnelDocumentForm({ initialData, onSuccess, preselectedPersonnelId }: PersonnelDocumentFormProps) {
   const { createDocument, updateDocument } = usePersonnelDocumentMutation();
-  const { data: personnel = [] } = usePersonnel();
+  const { options: personnelOptions, resolvePersonnelId } = usePersonnelSelectOptions();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
@@ -64,13 +64,14 @@ export function PersonnelDocumentForm({ initialData, onSuccess, preselectedPerso
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      const personnelId = await resolvePersonnelId(values.personnel_id);
       let fileUrl = values.file_url || null;
 
       if (selectedFile) {
         setIsUploading(true);
         const fileExt = selectedFile.name.split('.').pop();
         const safeName = selectedFile.name.replace(/[\\/:*?"<>|]/g, '-');
-        const filePath = `personnel-documents/${values.personnel_id}/${Date.now()}-${safeName}`;
+        const filePath = `personnel-documents/${personnelId}/${Date.now()}-${safeName}`;
         const { error: uploadError } = await supabase.storage
           .from('personnel-documents')
           .upload(filePath, selectedFile, {
@@ -91,6 +92,7 @@ export function PersonnelDocumentForm({ initialData, onSuccess, preselectedPerso
       // Clean up empty strings for optional dates
       const cleanValues = {
         ...values,
+        personnel_id: personnelId,
         title: values.document_type,
         document_number: values.document_number || null,
         issue_date: values.issue_date || null,
@@ -133,9 +135,9 @@ export function PersonnelDocumentForm({ initialData, onSuccess, preselectedPerso
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {personnel.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.first_name} {p.last_name}
+                  {personnelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

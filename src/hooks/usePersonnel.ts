@@ -1,6 +1,8 @@
+import { useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Database } from '@/integrations/supabase/types';
+import { useDrivers } from './useDrivers';
 
 export type Personnel = Database['public']['Tables']['personnel']['Row'];
 export type PersonnelInsert = Database['public']['Tables']['personnel']['Insert'];
@@ -21,6 +23,29 @@ export type MedicalVisitUpdate = Database['public']['Tables']['medical_visits'][
 export type Infraction = Database['public']['Tables']['infractions']['Row'];
 export type InfractionInsert = Database['public']['Tables']['infractions']['Insert'];
 export type InfractionUpdate = Database['public']['Tables']['infractions']['Update'];
+
+export interface PersonnelSelectOption {
+  value: string;
+  label: string;
+}
+
+function normalizeFullName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function splitFullName(fullName: string) {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: 'Sans', lastName: 'nom' };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '-' };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+}
 
 // ─── Personnel Hooks ─────────────────────────────────────────────────────────
 
@@ -86,6 +111,84 @@ export function usePersonnelMutation() {
   });
 
   return { createPersonnel, updatePersonnel, deletePersonnel };
+}
+
+export function usePersonnelSelectOptions() {
+  const queryClient = useQueryClient();
+  const { data: personnel = [] } = usePersonnel();
+  const { data: drivers = [] } = useDrivers();
+
+  const options = useMemo(() => {
+    const personnelOptions: PersonnelSelectOption[] = personnel.map((person) => ({
+      value: person.id,
+      label: `${person.first_name} ${person.last_name}`.trim(),
+    }));
+
+    const existingDriverKeys = new Set(
+      personnel
+        .filter((person) => person.role === 'driver')
+        .map((person) => normalizeFullName(`${person.first_name} ${person.last_name}`))
+    );
+
+    const driverOptions: PersonnelSelectOption[] = drivers
+      .filter((driver) => !existingDriverKeys.has(normalizeFullName(driver.name)))
+      .map((driver) => ({
+        value: `driver:${driver.id}`,
+        label: driver.name,
+      }));
+
+    return [...personnelOptions, ...driverOptions];
+  }, [drivers, personnel]);
+
+  const resolvePersonnelId = useCallback(
+    async (selectedValue: string) => {
+      if (!selectedValue.startsWith('driver:')) {
+        return selectedValue;
+      }
+
+      const driverId = selectedValue.replace('driver:', '');
+      const matchedDriver = drivers.find((driver) => driver.id === driverId);
+      if (!matchedDriver) {
+        throw new Error('Driver not found');
+      }
+
+      const normalizedDriverName = normalizeFullName(matchedDriver.name);
+      const existingPersonnel = personnel.find(
+        (person) =>
+          person.role === 'driver' &&
+          normalizeFullName(`${person.first_name} ${person.last_name}`) === normalizedDriverName
+      );
+
+      if (existingPersonnel) {
+        return existingPersonnel.id;
+      }
+
+      const { firstName, lastName } = splitFullName(matchedDriver.name);
+      const status = matchedDriver.status === 'off_duty' ? 'inactive' : 'active';
+
+      const { data, error } = await supabase
+        .from('personnel')
+        .insert({
+          first_name: firstName,
+          last_name: lastName,
+          phone: matchedDriver.phone || null,
+          role: 'driver',
+          status,
+        })
+        .select('id')
+        .single();
+
+      if (error || !data) {
+        throw error ?? new Error('Failed to create personnel record');
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['personnel'] });
+      return data.id;
+    },
+    [drivers, personnel, queryClient]
+  );
+
+  return { options, resolvePersonnelId };
 }
 
 // ─── Personnel Documents Hooks ───────────────────────────────────────────────

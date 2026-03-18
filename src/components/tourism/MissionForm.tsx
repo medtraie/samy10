@@ -10,7 +10,7 @@ import { useCreateTourismMission, useTourismClients, generateMissionReference, u
 import { useCreateDriver, useDrivers } from '@/hooks/useDrivers';
 import { useGPSwoxData } from '@/hooks/useGPSwoxVehicles';
 import { useGPSwoxGeofences } from '@/hooks/useGPSwoxGeofences';
-import { Calendar, MapPin, Users, Clock, FileText } from 'lucide-react';
+import { Calendar, MapPin, Users, Clock, FileText, PlusCircle, Trash2, Route } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useState } from 'react';
 
@@ -48,6 +48,15 @@ interface MissionFormProps {
   onSuccess?: () => void;
 }
 
+interface CircuitSegment {
+  start_date: string;
+  end_date: string;
+  pickup_location: string;
+  dropoff_location: string;
+  pickup_mode: 'select' | 'input';
+  dropoff_mode: 'select' | 'input';
+}
+
 export function MissionForm({ onSuccess }: MissionFormProps) {
   const createMission = useCreateTourismMission();
   const createWaypoint = useCreateTourismWaypoint();
@@ -60,8 +69,8 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
   const { data: geofences } = useGPSwoxGeofences();
   const [pickupMode, setPickupMode] = useState<'select' | 'input'>('select');
   const [dropoffMode, setDropoffMode] = useState<'select' | 'input'>('select');
-  const [extraPickupLocations, setExtraPickupLocations] = useState<string[]>([]);
-  const [extraDropoffLocations, setExtraDropoffLocations] = useState<string[]>([]);
+  const today = new Date().toISOString().split('T')[0];
+  const [extraCircuits, setExtraCircuits] = useState<CircuitSegment[]>([]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -69,8 +78,8 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
       title: '',
       mission_type: 'transfer',
       passengers_count: 1,
-      start_date: new Date().toISOString().split('T')[0],
-      end_date: new Date().toISOString().split('T')[0],
+      start_date: today,
+      end_date: today,
       priority: 'normal',
       start_km: undefined,
       end_km: undefined,
@@ -129,9 +138,11 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
         : [values.driver_parking, values.driver_toll, values.driver_misc]
             .filter((v): v is number => typeof v === 'number')
             .reduce((sum, v) => sum + v, 0) || null;
+    const circuitsInUse = values.mission_type === 'circuit' ? extraCircuits : [];
+
     const allPickupLocations = [
       values.pickup_location,
-      ...extraPickupLocations,
+      ...circuitsInUse.map((circuit) => circuit.pickup_location),
     ]
       .filter((location) => location && location.trim().length > 0)
       .map((location) => location.trim())
@@ -139,11 +150,25 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
 
     const allDropoffLocations = [
       values.dropoff_location,
-      ...extraDropoffLocations,
+      ...circuitsInUse.map((circuit) => circuit.dropoff_location),
     ]
       .filter((location) => location && location.trim().length > 0)
       .map((location) => location.trim())
       .join(' | ');
+
+    const circuitDetailsText =
+      values.mission_type === 'circuit' && circuitsInUse.length > 0
+        ? circuitsInUse
+            .map(
+              (circuit, index) =>
+                `Circuit ${index + 2}: ${circuit.start_date || '-'} → ${circuit.end_date || '-'} | ${circuit.pickup_location || '-'} -> ${circuit.dropoff_location || '-'}`,
+            )
+            .join('\n')
+        : '';
+
+    const notesWithCircuits = [values.notes?.trim(), circuitDetailsText ? `Détails circuits:\n${circuitDetailsText}` : '']
+      .filter((note) => note && note.length > 0)
+      .join('\n\n');
 
     const createdMission = await createMission.mutateAsync({
       reference: generateMissionReference(),
@@ -173,7 +198,7 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
       reference_mission: values.reference_mission || null,
       priority: values.priority,
       status: 'planned',
-      notes: values.notes || null,
+      notes: notesWithCircuits || null,
       observations_end_mission: values.observations_end_mission || null,
     });
     if (values.mission_type === 'circuit' && createdMission && (createdMission as any).id) {
@@ -182,19 +207,17 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
       if (values.pickup_location && values.pickup_location.trim().length > 0) {
         waypointLocations.push(values.pickup_location.trim());
       }
-      extraPickupLocations.forEach((location) => {
-        if (location && location.trim().length > 0) {
-          waypointLocations.push(location.trim());
+      circuitsInUse.forEach((circuit) => {
+        if (circuit.pickup_location && circuit.pickup_location.trim().length > 0) {
+          waypointLocations.push(circuit.pickup_location.trim());
+        }
+        if (circuit.dropoff_location && circuit.dropoff_location.trim().length > 0) {
+          waypointLocations.push(circuit.dropoff_location.trim());
         }
       });
       if (values.dropoff_location && values.dropoff_location.trim().length > 0) {
         waypointLocations.push(values.dropoff_location.trim());
       }
-      extraDropoffLocations.forEach((location) => {
-        if (location && location.trim().length > 0) {
-          waypointLocations.push(location.trim());
-        }
-      });
       if (waypointLocations.length > 0) {
         await Promise.all(
           waypointLocations.map((location, index) =>
@@ -218,8 +241,7 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
       }
     }
     form.reset();
-    setExtraPickupLocations([]);
-    setExtraDropoffLocations([]);
+    setExtraCircuits([]);
     onSuccess?.();
   };
 
@@ -248,6 +270,32 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
         source: 'gpswox' as const,
       })),
   ];
+
+  const addCircuit = () => {
+    setExtraCircuits((current) => [
+      ...current,
+      {
+        start_date: form.getValues('start_date') || today,
+        end_date: form.getValues('end_date') || today,
+        pickup_location: '',
+        dropoff_location: '',
+        pickup_mode: 'select',
+        dropoff_mode: 'select',
+      },
+    ]);
+  };
+
+  const updateCircuit = (index: number, updates: Partial<CircuitSegment>) => {
+    setExtraCircuits((current) =>
+      current.map((circuit, circuitIndex) =>
+        circuitIndex === index ? { ...circuit, ...updates } : circuit,
+      ),
+    );
+  };
+
+  const removeCircuit = (index: number) => {
+    setExtraCircuits((current) => current.filter((_, circuitIndex) => circuitIndex !== index));
+  };
 
   return (
     <Form {...form}>
@@ -488,60 +536,6 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
                     </FormControl>
                   </TabsContent>
                 </Tabs>
-                {missionType === 'circuit' && (
-                  <div className="mt-2 space-y-4">
-                    {extraPickupLocations.map((location, index) => (
-                      <Tabs key={index} defaultValue="select">
-                        <TabsList className="grid grid-cols-2 w-full mb-2">
-                          <TabsTrigger value="select">Sélectionner un lieu</TabsTrigger>
-                          <TabsTrigger value="input">Taper un lieu</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="select">
-                          <Select
-                            onValueChange={(value) => {
-                              const updated = [...extraPickupLocations];
-                              updated[index] = value;
-                              setExtraPickupLocations(updated);
-                            }}
-                            defaultValue={location || undefined}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Sélectionner un lieu" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {geofences?.map((geofence) => (
-                                <SelectItem key={geofence.id} value={geofence.name}>
-                                  {geofence.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TabsContent>
-                        <TabsContent value="input">
-                          <Input
-                            placeholder="Saisir un lieu..."
-                            value={location}
-                            onChange={(e) => {
-                              const updated = [...extraPickupLocations];
-                              updated[index] = e.target.value;
-                              setExtraPickupLocations(updated);
-                            }}
-                          />
-                        </TabsContent>
-                      </Tabs>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setExtraPickupLocations([...extraPickupLocations, ''])}
-                    >
-                      Ajouter un lieu
-                    </Button>
-                  </div>
-                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -583,22 +577,81 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
                     </FormControl>
                   </TabsContent>
                 </Tabs>
-                {missionType === 'circuit' && (
-                  <div className="mt-2 space-y-4">
-                    {extraDropoffLocations.map((location, index) => (
-                      <Tabs key={index} defaultValue="select">
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {missionType === 'circuit' && (
+            <div className="md:col-span-2 space-y-3 rounded-lg border border-border/70 p-4 bg-muted/20">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Route className="w-4 h-4" />
+                  Circuits supplémentaires
+                </h3>
+                <Button type="button" variant="outline" size="sm" onClick={addCircuit}>
+                  <PlusCircle className="w-3.5 h-3.5 mr-1" />
+                  Ajouter un Circuit
+                </Button>
+              </div>
+              {extraCircuits.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Ajoutez un circuit pour définir Date de début, Date de fin, Lieu de prise en charge et Lieu de destination.
+                </p>
+              )}
+              {extraCircuits.map((circuit, index) => (
+                <div key={index} className="rounded-md border border-border/70 p-3 space-y-3 bg-background/50">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Circuit {index + 2}</p>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => removeCircuit(index)}>
+                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                      Supprimer
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Date de début *
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          value={circuit.start_date}
+                          onChange={(e) => updateCircuit(index, { start_date: e.target.value })}
+                        />
+                      </FormControl>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Date de fin *
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          value={circuit.end_date}
+                          onChange={(e) => updateCircuit(index, { end_date: e.target.value })}
+                        />
+                      </FormControl>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        Lieu de prise en charge
+                      </FormLabel>
+                      <Tabs
+                        value={circuit.pickup_mode}
+                        onValueChange={(value) => updateCircuit(index, { pickup_mode: value as 'select' | 'input' })}
+                      >
                         <TabsList className="grid grid-cols-2 w-full mb-2">
                           <TabsTrigger value="select">Sélectionner un lieu</TabsTrigger>
                           <TabsTrigger value="input">Taper un lieu</TabsTrigger>
                         </TabsList>
                         <TabsContent value="select">
                           <Select
-                            onValueChange={(value) => {
-                              const updated = [...extraDropoffLocations];
-                              updated[index] = value;
-                              setExtraDropoffLocations(updated);
-                            }}
-                            defaultValue={location || undefined}
+                            onValueChange={(value) => updateCircuit(index, { pickup_location: value })}
+                            value={circuit.pickup_location || undefined}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -607,7 +660,7 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
                             </FormControl>
                             <SelectContent>
                               {geofences?.map((geofence) => (
-                                <SelectItem key={geofence.id} value={geofence.name}>
+                                <SelectItem key={`${geofence.id}-pickup-${index}`} value={geofence.name}>
                                   {geofence.name}
                                 </SelectItem>
                               ))}
@@ -617,30 +670,58 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
                         <TabsContent value="input">
                           <Input
                             placeholder="Saisir un lieu..."
-                            value={location}
-                            onChange={(e) => {
-                              const updated = [...extraDropoffLocations];
-                              updated[index] = e.target.value;
-                              setExtraDropoffLocations(updated);
-                            }}
+                            value={circuit.pickup_location}
+                            onChange={(e) => updateCircuit(index, { pickup_location: e.target.value })}
                           />
                         </TabsContent>
                       </Tabs>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setExtraDropoffLocations([...extraDropoffLocations, ''])}
-                    >
-                      Ajouter un lieu
-                    </Button>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        Lieu de destination
+                      </FormLabel>
+                      <Tabs
+                        value={circuit.dropoff_mode}
+                        onValueChange={(value) => updateCircuit(index, { dropoff_mode: value as 'select' | 'input' })}
+                      >
+                        <TabsList className="grid grid-cols-2 w-full mb-2">
+                          <TabsTrigger value="select">Sélectionner un lieu</TabsTrigger>
+                          <TabsTrigger value="input">Taper un lieu</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="select">
+                          <Select
+                            onValueChange={(value) => updateCircuit(index, { dropoff_location: value })}
+                            value={circuit.dropoff_location || undefined}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sélectionner un lieu" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {geofences?.map((geofence) => (
+                                <SelectItem key={`${geofence.id}-dropoff-${index}`} value={geofence.name}>
+                                  {geofence.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TabsContent>
+                        <TabsContent value="input">
+                          <Input
+                            placeholder="Saisir un lieu..."
+                            value={circuit.dropoff_location}
+                            onChange={(e) => updateCircuit(index, { dropoff_location: e.target.value })}
+                          />
+                        </TabsContent>
+                      </Tabs>
+                    </FormItem>
                   </div>
-                )}
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+                </div>
+              ))}
+            </div>
+          )}
 
           <FormField
             control={form.control}

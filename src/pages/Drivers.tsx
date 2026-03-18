@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Users, Search, Filter, LayoutGrid, List, UserCheck, UserX, Clock, Loader2, Car, Wifi, WifiOff, Plus, Bug } from 'lucide-react';
+import { Users, Search, Filter, LayoutGrid, List, UserCheck, UserX, Clock, Loader2, Car, Wifi, WifiOff, Plus, Bug, SquarePen, Trash2, History, FileDown } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -21,11 +21,17 @@ import { DriverForm } from '@/components/drivers/DriverForm';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { useUpdateDriver } from '@/hooks/useDrivers';
+import { useDeleteDriver, useUpdateDriver } from '@/hooks/useDrivers';
+import { useMissions } from '@/hooks/useMissions';
+import { useVoyages } from '@/hooks/useTransportBTP';
+import { useTourismMissions } from '@/hooks/useTourism';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface MappedDriver {
   id: string;
@@ -40,6 +46,80 @@ interface MappedDriver {
   source: 'local' | 'gpswox';
 }
 
+type DriverStatus = 'available' | 'on_mission' | 'off_duty';
+
+interface DriverHistoryEntry {
+  at: string;
+  status: DriverStatus;
+  vehicleId: string | null;
+  vehiclePlate: string | null;
+  source: 'snapshot' | 'rest_scheduled' | 'rest_finished';
+  note?: string;
+  restStart?: string;
+  restEnd?: string;
+}
+
+interface DriverTimelineRow {
+  at: string;
+  type: 'status' | 'mission' | 'voyage' | 'tourism';
+  label: string;
+  status?: DriverStatus;
+  vehicle: string;
+  source: string;
+}
+
+function toDayKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString('fr-FR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getDriverHistoryKey(driverId: string) {
+  return `driver_status_history_${driverId}`;
+}
+
+function readDriverHistory(driverId: string): DriverHistoryEntry[] {
+  if (typeof window === 'undefined') return [];
+  const raw = localStorage.getItem(getDriverHistoryKey(driverId));
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as DriverHistoryEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDriverHistory(driverId: string, entries: DriverHistoryEntry[]) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(getDriverHistoryKey(driverId), JSON.stringify(entries.slice(-500)));
+}
+
+function appendDriverHistoryEntry(driver: MappedDriver, entry: DriverHistoryEntry) {
+  const entries = readDriverHistory(driver.id);
+  const last = entries[entries.length - 1];
+  if (
+    entry.source === 'snapshot' &&
+    last &&
+    last.source === 'snapshot' &&
+    last.status === entry.status &&
+    last.vehicleId === entry.vehicleId &&
+    last.vehiclePlate === entry.vehiclePlate
+  ) {
+    return;
+  }
+  entries.push(entry);
+  writeDriverHistory(driver.id, entries);
+}
+
 export default function Drivers() {
   const { t, i18n } = useTranslation();
   const isRTL = i18n.language === 'ar';
@@ -48,12 +128,21 @@ export default function Drivers() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [deletingDriver, setDeletingDriver] = useState<Driver | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [hideGPSwox, setHideGPSwox] = useState(false);
+  const [historyDialogDriver, setHistoryDialogDriver] = useState<MappedDriver | null>(null);
+  const [historyWindowDays, setHistoryWindowDays] = useState<number>(30);
 
   const { data: drivers = [], isLoading: isLoadingDrivers } = useDrivers();
   const { data: gpswoxData, isLoading: isLoadingGPSwox, error: gpswoxError } = useGPSwoxData();
+  const { data: missions = [] } = useMissions();
+  const { data: voyages = [] } = useVoyages();
+  const { data: tourismMissions = [] } = useTourismMissions();
   const updateDriver = useUpdateDriver();
+  const deleteDriver = useDeleteDriver();
   const [restDialogDriver, setRestDialogDriver] = useState<MappedDriver | null>(null);
   const [restStart, setRestStart] = useState<string>(() => new Date().toISOString().slice(0,10));
   const [restDays, setRestDays] = useState<number>(1);
@@ -70,6 +159,11 @@ export default function Drivers() {
   });
 
   const isLoading = isLoadingDrivers || isLoadingGPSwox;
+  const localDriversById = useMemo(() => {
+    const map = new Map<string, Driver>();
+    drivers.forEach((driver) => map.set(driver.id, driver));
+    return map;
+  }, [drivers]);
 
   // Map drivers with vehicle status from GPSwox
   const mappedDrivers = useMemo(() => {
@@ -176,10 +270,30 @@ export default function Drivers() {
       const now = new Date();
       if (now >= end && d.source === 'local' && d.status === 'off_duty') {
         updateDriver.mutate({ id: d.id, status: 'available' });
+        appendDriverHistoryEntry(d, {
+          at: now.toISOString(),
+          status: 'available',
+          vehicleId: d.vehicleId,
+          vehiclePlate: d.vehiclePlate,
+          source: 'rest_finished',
+          note: 'Retour automatique après repos',
+        });
         localStorage.removeItem(key);
       }
     });
   }, [mappedDrivers, updateDriver]);
+
+  useEffect(() => {
+    mappedDrivers.forEach((driver) => {
+      appendDriverHistoryEntry(driver, {
+        at: new Date().toISOString(),
+        status: driver.status,
+        vehicleId: driver.vehicleId,
+        vehiclePlate: driver.vehiclePlate,
+        source: 'snapshot',
+      });
+    });
+  }, [mappedDrivers]);
 
   const handleSaveRest = () => {
     if (!restDialogDriver) return;
@@ -188,10 +302,199 @@ export default function Drivers() {
     end.setDate(start.getDate() + Number(restDays));
     const key = `driver_rest_${restDialogDriver.id}`;
     localStorage.setItem(key, JSON.stringify({ start: start.toISOString(), end: end.toISOString(), days: Number(restDays) }));
+    appendDriverHistoryEntry(restDialogDriver, {
+      at: new Date().toISOString(),
+      status: 'off_duty',
+      vehicleId: restDialogDriver.vehicleId,
+      vehiclePlate: restDialogDriver.vehiclePlate,
+      source: 'rest_scheduled',
+      note: `Repos planifié (${Number(restDays)} jour${Number(restDays) > 1 ? 's' : ''})`,
+      restStart: start.toISOString(),
+      restEnd: end.toISOString(),
+    });
     if (restDialogDriver.source === 'local') {
       updateDriver.mutate({ id: restDialogDriver.id, status: 'off_duty' });
     }
     setRestDialogDriver(null);
+  };
+
+  const vehiclesById = useMemo(() => {
+    const map = new Map<string, string>();
+    vehicles.forEach((vehicle) => {
+      map.set(String(vehicle.id), vehicle.plate);
+    });
+    return map;
+  }, [vehicles]);
+
+  const getVehicleLabel = (vehicleId: string | null, fallback?: string | null) => {
+    if (!vehicleId) return fallback || '-';
+    return vehiclesById.get(String(vehicleId)) || fallback || String(vehicleId);
+  };
+
+  const historyTimeline = useMemo<DriverTimelineRow[]>(() => {
+    if (!historyDialogDriver) return [];
+    const historyRows = readDriverHistory(historyDialogDriver.id).map((entry) => ({
+      at: entry.at,
+      type: 'status' as const,
+      label:
+        entry.note ||
+        (entry.status === 'available'
+          ? 'Disponible'
+          : entry.status === 'on_mission'
+            ? 'En mission'
+            : 'Repos'),
+      status: entry.status,
+      vehicle: getVehicleLabel(entry.vehicleId, entry.vehiclePlate),
+      source: entry.source === 'snapshot' ? 'Statut' : 'Événement',
+    }));
+
+    const missionRows =
+      historyDialogDriver.source === 'local'
+        ? missions
+            .filter((mission) => mission.driver_id === historyDialogDriver.id)
+            .map((mission) => ({
+              at: `${mission.mission_date}T08:00:00`,
+              type: 'mission' as const,
+              label: `Mission ${mission.departure_zone} → ${mission.arrival_zone}`,
+              status: mission.status === 'in_progress' ? 'on_mission' : 'available',
+              vehicle: getVehicleLabel(mission.vehicle_id),
+              source: 'Mission',
+            }))
+        : [];
+
+    const voyageRows =
+      historyDialogDriver.source === 'local'
+        ? voyages
+            .filter((voyage) => voyage.driver_id === historyDialogDriver.id)
+            .map((voyage) => ({
+              at: `${voyage.voyage_date}T${voyage.departure_time || '08:00:00'}`,
+              type: 'voyage' as const,
+              label: `Voyage ${voyage.trajet?.name || voyage.material_type || ''}`.trim(),
+              status: 'on_mission' as const,
+              vehicle: getVehicleLabel(voyage.vehicle_id),
+              source: 'BTP',
+            }))
+        : [];
+
+    const tourismRows =
+      historyDialogDriver.source === 'local'
+        ? tourismMissions
+            .filter((mission) => mission.driver_id === historyDialogDriver.id)
+            .map((mission) => ({
+              at: `${mission.start_date}T${mission.start_time || '08:00:00'}`,
+              type: 'tourism' as const,
+              label: `Tourisme ${mission.reference} • ${mission.title}`,
+              status: mission.status === 'in_progress' ? 'on_mission' : 'available',
+              vehicle: getVehicleLabel(mission.vehicle_id),
+              source: 'Tourisme',
+            }))
+        : [];
+
+    return [...historyRows, ...missionRows, ...voyageRows, ...tourismRows].sort(
+      (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()
+    );
+  }, [getVehicleLabel, historyDialogDriver, missions, tourismMissions, voyages]);
+
+  const historyStats = useMemo(() => {
+    if (!historyDialogDriver) {
+      return { reposDays: 0, missionDays: 0, disponibleDays: 0, vehiclesUsed: [] as string[] };
+    }
+    const now = new Date();
+    const rangeStart = new Date();
+    rangeStart.setDate(now.getDate() - (historyWindowDays - 1));
+    rangeStart.setHours(0, 0, 0, 0);
+
+    const inRangeRows = historyTimeline.filter((row) => new Date(row.at).getTime() >= rangeStart.getTime());
+    const missionDays = new Set(
+      inRangeRows
+        .filter((row) => row.type === 'mission' || row.type === 'voyage' || row.type === 'tourism')
+        .map((row) => toDayKey(new Date(row.at)))
+    );
+
+    const restEntries = readDriverHistory(historyDialogDriver.id).filter(
+      (entry) => entry.source === 'rest_scheduled' && entry.restStart && entry.restEnd
+    );
+    const restDays = new Set<string>();
+    restEntries.forEach((entry) => {
+      const start = new Date(entry.restStart as string);
+      const end = new Date(entry.restEnd as string);
+      const cursor = new Date(start);
+      cursor.setHours(0, 0, 0, 0);
+      while (cursor <= end) {
+        if (cursor >= rangeStart && cursor <= now) {
+          restDays.add(toDayKey(cursor));
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    });
+
+    const vehiclesUsed = Array.from(
+      new Set(inRangeRows.map((row) => row.vehicle).filter((vehicle) => vehicle && vehicle !== '-'))
+    );
+    const missionDaysCount = missionDays.size;
+    const reposDaysCount = restDays.size;
+    const disponibleDays = Math.max(0, historyWindowDays - reposDaysCount - missionDaysCount);
+
+    return {
+      reposDays: reposDaysCount,
+      missionDays: missionDaysCount,
+      disponibleDays,
+      vehiclesUsed,
+    };
+  }, [historyDialogDriver, historyTimeline, historyWindowDays]);
+
+  const handleDownloadHistoryPdf = () => {
+    if (!historyDialogDriver) return;
+    const doc = new jsPDF();
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, 210, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text(`Historique Chauffeur`, 14, 14);
+    doc.setFontSize(12);
+    doc.text(historyDialogDriver.name, 14, 22);
+    doc.setFontSize(10);
+    doc.text(`Fenêtre: ${historyWindowDays} jours`, 196, 14, { align: 'right' });
+    doc.text(`Généré: ${formatDateTime(new Date().toISOString())}`, 196, 22, { align: 'right' });
+
+    doc.setTextColor(17, 24, 39);
+    doc.setFontSize(11);
+    doc.text(`Repos: ${historyStats.reposDays} j`, 14, 42);
+    doc.text(`Disponible: ${historyStats.disponibleDays} j`, 70, 42);
+    doc.text(`En activité: ${historyStats.missionDays} j`, 130, 42);
+    doc.text(`Véhicules: ${historyStats.vehiclesUsed.join(', ') || '-'}`, 14, 50);
+
+    autoTable(doc, {
+      startY: 58,
+      head: [['Date & heure', 'Événement', 'Véhicule', 'Source']],
+      body: historyTimeline.slice(0, 120).map((row) => [formatDateTime(row.at), row.label, row.vehicle, row.source]),
+      theme: 'striped',
+      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
+      styles: { fontSize: 9, cellPadding: 2.5 },
+    });
+
+    doc.save(`historique-chauffeur-${historyDialogDriver.name.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+  };
+
+  const handleOpenEditDriver = (driver: MappedDriver) => {
+    if (driver.source !== 'local') return;
+    const localDriver = localDriversById.get(driver.id);
+    if (!localDriver) return;
+    setEditingDriver(localDriver);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleOpenDeleteDriver = (driver: MappedDriver) => {
+    if (driver.source !== 'local') return;
+    const localDriver = localDriversById.get(driver.id);
+    if (!localDriver) return;
+    setDeletingDriver(localDriver);
+  };
+
+  const handleConfirmDeleteDriver = async () => {
+    if (!deletingDriver) return;
+    await deleteDriver.mutateAsync(deletingDriver.id);
+    setDeletingDriver(null);
   };
   // Filter drivers
   const filteredDrivers = mappedDrivers.filter((driver) => {
@@ -463,7 +766,18 @@ export default function Drivers() {
               : 'space-y-3'
           )}>
             {filteredDrivers.map((driver) => (
-              <DriverCardComponent key={driver.id} driver={driver} viewMode={viewMode} onOpenRepos={() => setRestDialogDriver(driver)} />
+              <DriverCardComponent
+                key={driver.id}
+                driver={driver}
+                viewMode={viewMode}
+                onOpenRepos={() => setRestDialogDriver(driver)}
+                onOpenHistory={() => {
+                  setHistoryDialogDriver(driver);
+                  setHistoryWindowDays(30);
+                }}
+                onEdit={() => handleOpenEditDriver(driver)}
+                onDelete={() => handleOpenDeleteDriver(driver)}
+              />
             ))}
           </div>
         ) : (
@@ -491,6 +805,33 @@ export default function Drivers() {
         open={isAddDialogOpen} 
         onOpenChange={setIsAddDialogOpen}
       />
+      <DriverForm
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) setEditingDriver(null);
+        }}
+        editDriver={editingDriver}
+      />
+      <Dialog open={!!deletingDriver} onOpenChange={(open) => !open && setDeletingDriver(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Supprimer le chauffeur</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Voulez-vous vraiment supprimer{' '}
+            <span className="font-semibold text-foreground">{deletingDriver?.name}</span> ?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingDriver(null)} disabled={deleteDriver.isPending}>
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteDriver} disabled={deleteDriver.isPending}>
+              {deleteDriver.isPending ? 'Suppression...' : 'Supprimer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!restDialogDriver} onOpenChange={(v) => !v && setRestDialogDriver(null)}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
@@ -514,16 +855,98 @@ export default function Drivers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={!!historyDialogDriver} onOpenChange={(open) => !open && setHistoryDialogDriver(null)}>
+        <DialogContent className="sm:max-w-[980px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-4 h-4" />
+              Historique • {historyDialogDriver?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Historique intelligent des repos, disponibilités et véhicules utilisés avec date et heure.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant={historyWindowDays === 7 ? 'default' : 'outline'} onClick={() => setHistoryWindowDays(7)}>
+                7 jours
+              </Button>
+              <Button size="sm" variant={historyWindowDays === 30 ? 'default' : 'outline'} onClick={() => setHistoryWindowDays(30)}>
+                30 jours
+              </Button>
+              <Button size="sm" variant={historyWindowDays === 90 ? 'default' : 'outline'} onClick={() => setHistoryWindowDays(90)}>
+                90 jours
+              </Button>
+              <Button size="sm" className="ml-auto" onClick={handleDownloadHistoryPdf}>
+                <FileDown className="w-3.5 h-3.5 mr-2" />
+                Télécharger PDF
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Jours repos</p>
+                  <p className="text-2xl font-semibold">{historyStats.reposDays}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Jours disponible</p>
+                  <p className="text-2xl font-semibold">{historyStats.disponibleDays}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Jours activité</p>
+                  <p className="text-2xl font-semibold">{historyStats.missionDays}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Véhicules utilisés</p>
+                  <p className="text-2xl font-semibold">{historyStats.vehiclesUsed.length}</p>
+                </CardContent>
+              </Card>
+            </div>
+            <Card>
+              <CardContent className="p-0">
+                <div className="grid grid-cols-4 gap-2 px-4 py-2 border-b bg-muted/30 text-xs font-semibold text-muted-foreground">
+                  <span>Date & heure</span>
+                  <span>Événement</span>
+                  <span>Véhicule</span>
+                  <span>Source</span>
+                </div>
+                <div className="max-h-[360px] overflow-y-auto">
+                  {historyTimeline.length > 0 ? (
+                    historyTimeline.slice(0, 200).map((row, index) => (
+                      <div key={`${row.at}-${index}`} className="grid grid-cols-4 gap-2 px-4 py-2 border-b text-sm">
+                        <span className="text-muted-foreground">{formatDateTime(row.at)}</span>
+                        <span>{row.label}</span>
+                        <span>{row.vehicle}</span>
+                        <span className="text-muted-foreground">{row.source}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6 text-sm text-muted-foreground text-center">
+                      Aucun historique disponible pour cette période.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
 
 // Driver Card Component
-function DriverCardComponent({ driver, viewMode, onOpenRepos }: { driver: MappedDriver; viewMode: 'grid' | 'list'; onOpenRepos: () => void }) {
+function DriverCardComponent({ driver, viewMode, onOpenRepos, onOpenHistory, onEdit, onDelete }: { driver: MappedDriver; viewMode: 'grid' | 'list'; onOpenRepos: () => void; onOpenHistory: () => void; onEdit: () => void; onDelete: () => void }) {
   const statusConfig = {
-    available: { label: 'Disponible', color: 'bg-success text-success-foreground' },
-    on_mission: { label: 'En mission', color: 'bg-info text-info-foreground' },
-    off_duty: { label: 'Repos', color: 'bg-muted text-muted-foreground' },
+    available: { label: 'Disponible', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30', ring: 'ring-emerald-400/30', glow: 'from-emerald-500/10' },
+    on_mission: { label: 'En mission', color: 'bg-sky-500/20 text-sky-300 border-sky-400/30', ring: 'ring-sky-400/30', glow: 'from-sky-500/10' },
+    off_duty: { label: 'Repos', color: 'bg-violet-500/20 text-violet-300 border-violet-400/30', ring: 'ring-violet-400/30', glow: 'from-violet-500/10' },
   };
 
   const config = statusConfig[driver.status];
@@ -532,132 +955,155 @@ function DriverCardComponent({ driver, viewMode, onOpenRepos }: { driver: Mapped
   const restRaw = typeof window !== 'undefined' ? localStorage.getItem(restKey) : null;
   const restData = restRaw ? JSON.parse(restRaw) : null;
   const daysLeft = restData ? Math.max(0, Math.ceil((new Date(restData.end).getTime() - Date.now()) / 86400000)) : null;
+  const signalLabel = driver.isOnline ? 'En ligne' : 'Hors ligne';
+  const signalClass = driver.isOnline ? 'text-emerald-300' : 'text-zinc-400';
+  const baseActionClass = 'h-8 rounded-md border border-border/60 bg-background/70 hover:bg-background text-xs px-2';
+  const shouldShowActions = driver.source === 'local';
+  const statusDetail = daysLeft !== null ? `• reste ${daysLeft}j` : '';
 
   if (viewMode === 'list') {
     return (
-      <Card className="hover:border-primary/30 transition-colors">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Avatar className="w-10 h-10">
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+      <Card className={cn('group overflow-hidden border-border/70 bg-gradient-to-br from-slate-900/95 to-slate-950/95 transition-all duration-300 hover:scale-[1.01] hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10')}>
+        <CardContent className="relative p-4">
+          <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-r to-transparent opacity-70', config.glow)} />
+          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className={cn('relative rounded-xl p-[1px] ring-1', config.ring)}>
+                <Avatar className="h-11 w-11 border border-white/10">
+                  <AvatarFallback className="bg-slate-800 text-cyan-200 font-semibold">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
-                {driver.vehiclePlate && (
-                  <div className={cn(
-                    'absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center',
-                    driver.isOnline ? 'bg-success' : 'bg-muted'
-                  )}>
-                    {driver.isOnline ? (
-                      <Wifi className="w-2.5 h-2.5 text-success-foreground" />
-                    ) : (
-                      <WifiOff className="w-2.5 h-2.5 text-muted-foreground" />
-                    )}
-                  </div>
-                )}
+                <div className={cn('absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-slate-800', driver.isOnline ? 'bg-emerald-500' : 'bg-zinc-500')}>
+                  {driver.isOnline ? <Wifi className="h-2.5 w-2.5 text-slate-950" /> : <WifiOff className="h-2.5 w-2.5 text-slate-950" />}
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold text-foreground">{driver.name}</h3>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                  {driver.phone && <span>{driver.phone}</span>}
-                  <span>Permis {driver.licenseType}</span>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-semibold text-slate-50">{driver.name}</h3>
+                  <Badge className={cn('border', config.color)}>{config.label} {statusDetail}</Badge>
+                  {driver.source === 'gpswox' && <Badge variant="outline" className="border-blue-400/30 bg-blue-500/10 text-blue-200">GPSwox</Badge>}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <Badge variant="outline" className="border-slate-700 bg-slate-900/80 text-slate-300">
+                    {driver.phone || 'Téléphone non défini'}
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-700 bg-slate-900/80 text-slate-300">
+                    Permis {driver.licenseType}
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-700 bg-slate-900/80 text-slate-300">
+                    {driver.vehiclePlate || 'Aucun véhicule'}
+                  </Badge>
+                  <span className={cn('text-xs font-medium', signalClass)}>{signalLabel}</span>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              {driver.source === 'gpswox' && (
-                <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
-                  GPSwox
-                </Badge>
-              )}
-              {driver.vehiclePlate && (
-                <Badge variant="outline" className="flex items-center gap-1">
-                  <Car className="w-3 h-3" />
-                  {driver.vehiclePlate}
-                </Badge>
-              )}
-              <Badge className={config.color}>
-                {config.label}
-                {daysLeft !== null && (
-                  <span className="ml-1 text-destructive font-semibold">• reste {daysLeft}j</span>
-                )}
-              </Badge>
-              {driver.source === 'local' && (
-                <Button size="sm" variant="secondary" onClick={onOpenRepos}>Repos</Button>
-              )}
-            </div>
+            {shouldShowActions && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" className={cn(baseActionClass, 'text-sky-300 border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/20')} onClick={onOpenHistory}>
+                  <History className="w-3.5 h-3.5 mr-1" />
+                  Historique
+                </Button>
+                <Button size="sm" className={cn(baseActionClass, 'text-violet-300 border-violet-400/30 bg-violet-500/10 hover:bg-violet-500/20')} onClick={onOpenRepos}>
+                  <Clock className="w-3.5 h-3.5 mr-1" />
+                  Repos
+                </Button>
+                <Button size="sm" className={cn(baseActionClass, 'text-amber-200 border-amber-400/30 bg-amber-500/10 hover:bg-amber-500/20')} onClick={onEdit}>
+                  <SquarePen className="w-3.5 h-3.5 mr-1" />
+                  Modifier
+                </Button>
+                <Button size="sm" className={cn(baseActionClass, 'text-rose-300 border-rose-400/30 bg-rose-500/10 hover:bg-rose-500/20')} onClick={onDelete}>
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Supprimer
+                </Button>
+              </div>
+            )}
+            {!shouldShowActions && (
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <Car className="h-3.5 w-3.5" />
+                Vue synchronisée GPSwox
+              </div>
+            )}
           </div>
+          {driver.vehiclePlate && (
+            <div className="relative mt-3 rounded-lg border border-cyan-400/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-100">
+              Véhicule actif: {driver.vehiclePlate}
+            </div>
+          )}
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="hover:border-primary/30 transition-colors">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-3">
-          <div className="relative">
-            <Avatar className="w-12 h-12">
-              <AvatarFallback className="bg-primary/10 text-primary font-semibold text-lg">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            {driver.vehiclePlate && (
-              <div className={cn(
-                'absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-background flex items-center justify-center',
-                driver.isOnline ? 'bg-success' : 'bg-muted'
-              )}>
-                {driver.isOnline ? (
-                  <Wifi className="w-3 h-3 text-success-foreground" />
-                ) : (
-                  <WifiOff className="w-3 h-3 text-muted-foreground" />
-                )}
+    <Card className={cn('group relative overflow-hidden border-border/70 bg-gradient-to-br from-slate-900 to-slate-950 text-slate-100 transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-2xl hover:shadow-primary/10')}>
+      <CardContent className="p-0">
+        <div className={cn('absolute inset-0 bg-gradient-to-br to-transparent opacity-80', config.glow)} />
+        <div className="relative p-4">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={cn('relative rounded-xl p-[1px] ring-1', config.ring)}>
+                <Avatar className="h-12 w-12 border border-white/10">
+                  <AvatarFallback className="bg-slate-800 text-cyan-200 font-semibold text-lg">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className={cn('absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-900', driver.isOnline ? 'bg-emerald-500' : 'bg-zinc-500')}>
+                  {driver.isOnline ? <Wifi className="h-3 w-3 text-slate-950" /> : <WifiOff className="h-3 w-3 text-slate-950" />}
+                </div>
               </div>
-            )}
+              <div>
+                <h3 className="text-lg font-semibold leading-tight text-slate-50">{driver.name}</h3>
+                <div className="mt-1 flex items-center gap-2 text-xs">
+                  <span className={cn('font-medium', signalClass)}>{signalLabel}</span>
+                  {driver.source === 'gpswox' && <Badge variant="outline" className="h-5 border-blue-400/30 bg-blue-500/10 px-1.5 text-[10px] text-blue-200">GPSwox</Badge>}
+                </div>
+              </div>
+            </div>
+            <Badge className={cn('border px-2 py-1 text-[11px]', config.color)}>
+              {config.label} {statusDetail}
+            </Badge>
           </div>
-          <div className="flex gap-2">
-            {driver.source === 'gpswox' && (
-              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 h-fit">
-                GPSwox
+
+          <div className="mb-4 grid grid-cols-1 gap-2 text-xs">
+            <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-slate-200">
+              Téléphone: {driver.phone || 'Non renseigné'}
+            </div>
+            <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-slate-200">
+              Permis: {driver.licenseType}
+            </div>
+            <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-slate-200">
+              Véhicule: {driver.vehiclePlate || 'Aucun véhicule assigné'}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {shouldShowActions ? (
+              <>
+                <Button size="sm" className={cn(baseActionClass, 'text-sky-300 border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/20')} onClick={onOpenHistory}>
+                  <History className="w-3.5 h-3.5 mr-1" />
+                  Historique
+                </Button>
+                <Button size="sm" className={cn(baseActionClass, 'text-violet-300 border-violet-400/30 bg-violet-500/10 hover:bg-violet-500/20')} onClick={onOpenRepos}>
+                  <Clock className="w-3.5 h-3.5 mr-1" />
+                  Repos
+                </Button>
+                <Button size="sm" className={cn(baseActionClass, 'text-amber-200 border-amber-400/30 bg-amber-500/10 hover:bg-amber-500/20')} onClick={onEdit}>
+                  <SquarePen className="w-3.5 h-3.5 mr-1" />
+                  Modifier
+                </Button>
+                <Button size="sm" className={cn(baseActionClass, 'text-rose-300 border-rose-400/30 bg-rose-500/10 hover:bg-rose-500/20')} onClick={onDelete}>
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Supprimer
+                </Button>
+              </>
+            ) : (
+              <Badge variant="outline" className="border-slate-700 bg-slate-900/80 text-slate-300">
+                Carte synchronisée en lecture
               </Badge>
             )}
-            <Badge className={cn(config.color, "h-fit")}>
-              {config.label}
-              {daysLeft !== null && (
-                <span className="ml-1 text-destructive font-semibold">• reste {daysLeft}j</span>
-              )}
-            </Badge>
-            {driver.source === 'local' && (
-              <Button size="sm" variant="secondary" onClick={onOpenRepos}>Repos</Button>
-            )}
           </div>
         </div>
-        
-        <h3 className="font-semibold text-foreground text-lg mb-1">{driver.name}</h3>
-        
-        <div className="space-y-1 text-sm text-muted-foreground mb-3">
-          {driver.phone && (
-            <p className="flex items-center gap-2">
-              <span className="text-foreground/70">📞</span> {driver.phone}
-            </p>
-          )}
-          <p className="flex items-center gap-2">
-            <span className="text-foreground/70">🪪</span> Permis {driver.licenseType}
-          </p>
-        </div>
-        
-        {driver.vehiclePlate ? (
-          <Badge variant="outline" className="flex items-center gap-1 w-fit">
-            <Car className="w-3 h-3" />
-            {driver.vehiclePlate}
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className="text-muted-foreground">
-            Aucun véhicule assigné
-          </Badge>
-        )}
       </CardContent>
     </Card>
   );

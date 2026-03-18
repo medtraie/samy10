@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,11 +21,12 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
-import { useCreateDriver } from '@/hooks/useDrivers';
+import { Driver, useCreateDriver, useUpdateDriver } from '@/hooks/useDrivers';
 
 interface DriverFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editDriver?: Driver | null;
   onSuccess?: () => void;
 }
 
@@ -38,21 +39,41 @@ interface FormData {
   status: 'available' | 'on_mission' | 'off_duty';
 }
 
-export function DriverForm({ open, onOpenChange, onSuccess }: DriverFormProps) {
+const defaultFormData: FormData = {
+  name: '',
+  phone: '',
+  license: 'B',
+  licenseExpiry: '',
+  vehicleId: '',
+  status: 'available',
+};
+
+export function DriverForm({ open, onOpenChange, editDriver, onSuccess }: DriverFormProps) {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'ar';
   
   const { data: vehicles = [], isLoading: vehiclesLoading } = useGPSwoxVehicles();
   const createDriver = useCreateDriver();
+  const updateDriver = useUpdateDriver();
+  const isEditing = Boolean(editDriver);
 
-  const [formData, setFormData] = useState<FormData>({
-    name: '',
-    phone: '',
-    license: 'B',
-    licenseExpiry: '',
-    vehicleId: '',
-    status: 'available',
-  });
+  const [formData, setFormData] = useState<FormData>(defaultFormData);
+
+  useEffect(() => {
+    if (!open) return;
+    if (editDriver) {
+      setFormData({
+        name: editDriver.name || '',
+        phone: editDriver.phone || '',
+        license: editDriver.license_type || 'B',
+        licenseExpiry: (editDriver.license_expiry || '').slice(0, 10),
+        vehicleId: editDriver.vehicle_id || '',
+        status: editDriver.status || 'available',
+      });
+      return;
+    }
+    setFormData(defaultFormData);
+  }, [open, editDriver]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,28 +87,42 @@ export function DriverForm({ open, onOpenChange, onSuccess }: DriverFormProps) {
       return;
     }
 
-    createDriver.mutate({
+    const payload = {
       name: formData.name,
       phone: formData.phone,
       license_type: formData.license,
       license_expiry: formData.licenseExpiry,
       vehicle_id: formData.vehicleId || null,
       status: formData.status,
-    }, {
+    };
+
+    if (editDriver) {
+      updateDriver.mutate(
+        {
+          id: editDriver.id,
+          ...payload,
+        },
+        {
+          onSuccess: () => {
+            setFormData(defaultFormData);
+            onOpenChange(false);
+            onSuccess?.();
+          },
+        }
+      );
+      return;
+    }
+
+    createDriver.mutate(payload, {
       onSuccess: () => {
-        setFormData({
-          name: '',
-          phone: '',
-          license: 'B',
-          licenseExpiry: '',
-          vehicleId: '',
-          status: 'available',
-        });
+        setFormData(defaultFormData);
         onOpenChange(false);
         onSuccess?.();
       },
     });
   };
+
+  const isSubmitting = createDriver.isPending || updateDriver.isPending;
 
   const availableVehicles = vehicles;
 
@@ -95,9 +130,9 @@ export function DriverForm({ open, onOpenChange, onSuccess }: DriverFormProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Ajouter un chauffeur</DialogTitle>
+          <DialogTitle>{isEditing ? 'Modifier un chauffeur' : 'Ajouter un chauffeur'}</DialogTitle>
           <DialogDescription>
-            Remplissez les informations du nouveau chauffeur
+            {isEditing ? 'Modifiez les informations du chauffeur' : 'Remplissez les informations du nouveau chauffeur'}
           </DialogDescription>
         </DialogHeader>
         
@@ -210,12 +245,18 @@ export function DriverForm({ open, onOpenChange, onSuccess }: DriverFormProps) {
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={createDriver.isPending}
+              disabled={isSubmitting}
             >
               Annuler
             </Button>
-            <Button type="submit" disabled={createDriver.isPending}>
-              {createDriver.isPending ? 'Ajout en cours...' : 'Ajouter le chauffeur'}
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting
+                ? isEditing
+                  ? 'Mise à jour en cours...'
+                  : 'Ajout en cours...'
+                : isEditing
+                ? 'Enregistrer les modifications'
+                : 'Ajouter le chauffeur'}
             </Button>
           </DialogFooter>
         </form>

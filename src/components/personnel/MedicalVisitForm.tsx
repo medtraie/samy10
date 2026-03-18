@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useMedicalVisitMutation, MedicalVisit, usePersonnel } from '@/hooks/usePersonnel';
+import { useMedicalVisitMutation, MedicalVisit, usePersonnelSelectOptions } from '@/hooks/usePersonnel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -26,7 +26,7 @@ interface MedicalVisitFormProps {
 
 export function MedicalVisitForm({ initialData, onSuccess, preselectedPersonnelId }: MedicalVisitFormProps) {
   const { createVisit, updateVisit } = useMedicalVisitMutation();
-  const { data: personnel = [] } = usePersonnel();
+  const { options: personnelOptions, resolvePersonnelId } = usePersonnelSelectOptions();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -59,9 +59,11 @@ export function MedicalVisitForm({ initialData, onSuccess, preselectedPersonnelI
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      const personnelId = await resolvePersonnelId(values.personnel_id);
       // Clean up empty strings for optional dates
       const cleanValues = {
         ...values,
+        personnel_id: personnelId,
         next_visit_date: values.next_visit_date || null,
       };
 
@@ -97,9 +99,9 @@ export function MedicalVisitForm({ initialData, onSuccess, preselectedPersonnelI
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {personnel.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.first_name} {p.last_name}
+                  {personnelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useInfractionMutation, Infraction, usePersonnel } from '@/hooks/usePersonnel';
+import { useInfractionMutation, Infraction, usePersonnelSelectOptions } from '@/hooks/usePersonnel';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ interface InfractionFormProps {
 
 export function InfractionForm({ initialData, onSuccess, preselectedPersonnelId }: InfractionFormProps) {
   const { createInfraction, updateInfraction } = useInfractionMutation();
-  const { data: personnel = [] } = usePersonnel();
+  const { options: personnelOptions, resolvePersonnelId } = usePersonnelSelectOptions();
   const { data: gpswoxData } = useGPSwoxVehicles();
   const vehicles = gpswoxData || [];
 
@@ -71,8 +71,10 @@ export function InfractionForm({ initialData, onSuccess, preselectedPersonnelId 
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      const personnelId = await resolvePersonnelId(values.personnel_id);
       const cleanValues = {
         ...values,
+        personnel_id: personnelId,
         vehicle_id: values.vehicle_id && values.vehicle_id !== 'none' ? values.vehicle_id : null,
         points_deducted: values.points_deducted || null,
         payment_date: values.payment_date || null,
@@ -111,9 +113,9 @@ export function InfractionForm({ initialData, onSuccess, preselectedPersonnelId 
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {personnel.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.first_name} {p.last_name}
+                    {personnelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

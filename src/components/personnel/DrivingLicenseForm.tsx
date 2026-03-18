@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useDrivingLicenseMutation, DrivingLicense, usePersonnel } from '@/hooks/usePersonnel';
+import { useDrivingLicenseMutation, DrivingLicense, usePersonnelSelectOptions } from '@/hooks/usePersonnel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -24,7 +24,7 @@ interface DrivingLicenseFormProps {
 
 export function DrivingLicenseForm({ initialData, onSuccess, preselectedPersonnelId }: DrivingLicenseFormProps) {
   const { createLicense, updateLicense } = useDrivingLicenseMutation();
-  const { data: personnel = [] } = usePersonnel();
+  const { options: personnelOptions, resolvePersonnelId } = usePersonnelSelectOptions();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -53,8 +53,10 @@ export function DrivingLicenseForm({ initialData, onSuccess, preselectedPersonne
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      const personnelId = await resolvePersonnelId(values.personnel_id);
       const cleanValues = {
         ...values,
+        personnel_id: personnelId,
         categories: values.categories
           ? values.categories.split(',').map((value) => value.trim()).filter(Boolean)
           : null,
@@ -93,9 +95,9 @@ export function DrivingLicenseForm({ initialData, onSuccess, preselectedPersonne
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {personnel.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.first_name} {p.last_name}
+                  {personnelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
