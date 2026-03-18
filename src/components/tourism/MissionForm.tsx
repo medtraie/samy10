@@ -51,6 +51,8 @@ interface MissionFormProps {
 interface CircuitSegment {
   start_date: string;
   end_date: string;
+  start_time: string;
+  end_time: string;
   pickup_location: string;
   dropoff_location: string;
   pickup_mode: 'select' | 'input';
@@ -161,7 +163,7 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
         ? circuitsInUse
             .map(
               (circuit, index) =>
-                `Circuit ${index + 2}: ${circuit.start_date || '-'} → ${circuit.end_date || '-'} | ${circuit.pickup_location || '-'} -> ${circuit.dropoff_location || '-'}`,
+                `Circuit ${index + 2}: ${circuit.start_date || '-'} ${circuit.start_time || '--:--'} → ${circuit.end_date || '-'} ${circuit.end_time || '--:--'} | ${circuit.pickup_location || '-'} -> ${circuit.dropoff_location || '-'}`,
             )
             .join('\n')
         : '';
@@ -277,6 +279,8 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
       {
         start_date: form.getValues('start_date') || today,
         end_date: form.getValues('end_date') || today,
+        start_time: form.getValues('start_time') || '',
+        end_time: form.getValues('end_time') || '',
         pickup_location: '',
         dropoff_location: '',
         pickup_mode: 'select',
@@ -596,7 +600,7 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
               </div>
               {extraCircuits.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Ajoutez un circuit pour définir Date de début, Date de fin, Lieu de prise en charge et Lieu de destination.
+                  Ajoutez un circuit pour définir Date de début, Date de fin, heure de départ, heure retour, Lieu de prise en charge et Lieu de destination.
                 </p>
               )}
               {extraCircuits.map((circuit, index) => (
@@ -632,6 +636,32 @@ export function MissionForm({ onSuccess }: MissionFormProps) {
                           type="date"
                           value={circuit.end_date}
                           onChange={(e) => updateCircuit(index, { end_date: e.target.value })}
+                        />
+                      </FormControl>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Clock className="w-4 h-4" />
+                        heure de départ
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="time"
+                          value={circuit.start_time}
+                          onChange={(e) => updateCircuit(index, { start_time: e.target.value })}
+                        />
+                      </FormControl>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Clock className="w-4 h-4" />
+                        heure retour
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="time"
+                          value={circuit.end_time}
+                          onChange={(e) => updateCircuit(index, { end_time: e.target.value })}
                         />
                       </FormControl>
                     </FormItem>

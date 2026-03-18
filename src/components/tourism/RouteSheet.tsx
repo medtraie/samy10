@@ -14,6 +14,50 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Textarea } from '@/components/ui/textarea';
 
+interface CircuitDetail {
+  circuitNumber: number;
+  startDate: string;
+  startTime: string | null;
+  endDate: string;
+  endTime: string | null;
+  pickupLocation: string;
+  dropoffLocation: string;
+}
+
+function formatShortDate(dateText: string) {
+  const parsedDate = new Date(dateText);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return dateText;
+  }
+  return format(parsedDate, 'dd MMM yyyy', { locale: fr });
+}
+
+function extractCircuitDetails(notes: string | null): CircuitDetail[] {
+  if (!notes) return [];
+  const detailsSection = notes.split('Détails circuits:\n')[1];
+  if (!detailsSection) return [];
+
+  return detailsSection
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('Circuit '))
+    .map((line) => {
+      const match = line.match(/^Circuit\s+(\d+):\s+(.+?)\s+(\d{2}:\d{2}|--:--)?\s*→\s+(.+?)\s+(\d{2}:\d{2}|--:--)?\s*\|\s*(.+?)\s*->\s*(.+)$/);
+      if (!match) return null;
+      const [, circuitNumber, startDate, startTime, endDate, endTime, pickupLocation, dropoffLocation] = match;
+      return {
+        circuitNumber: Number(circuitNumber),
+        startDate: startDate.trim(),
+        startTime: startTime && startTime !== '--:--' ? startTime : null,
+        endDate: endDate.trim(),
+        endTime: endTime && endTime !== '--:--' ? endTime : null,
+        pickupLocation: pickupLocation.trim(),
+        dropoffLocation: dropoffLocation.trim(),
+      } as CircuitDetail;
+    })
+    .filter((item): item is CircuitDetail => item !== null);
+}
+
 export function RouteSheet() {
   const { data: missions, isLoading } = useTourismMissions();
   const [selectedMission, setSelectedMission] = useState<TourismMission | null>(null);
@@ -50,6 +94,7 @@ export function RouteSheet() {
                 <MissionRouteCard
                   key={mission.id}
                   mission={mission}
+                  isSelected={selectedMission?.id === mission.id}
                   onSelect={() => setSelectedMission(mission)}
                 />
               ))}
@@ -71,12 +116,19 @@ export function RouteSheet() {
 
 interface MissionRouteCardProps {
   mission: TourismMission;
+  isSelected: boolean;
   onSelect: () => void;
 }
 
-function MissionRouteCard({ mission, onSelect }: MissionRouteCardProps) {
+function MissionRouteCard({ mission, isSelected, onSelect }: MissionRouteCardProps) {
+  const circuitCount = extractCircuitDetails(mission.notes).length;
   return (
-    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={onSelect}>
+    <Card
+      className={`cursor-pointer transition-all ${
+        isSelected ? 'ring-2 ring-primary shadow-md' : 'hover:shadow-md'
+      }`}
+      onClick={onSelect}
+    >
       <CardContent className="pt-4">
         <div className="flex items-start justify-between mb-2">
           <Badge variant="outline" className="font-mono text-xs">
@@ -85,6 +137,16 @@ function MissionRouteCard({ mission, onSelect }: MissionRouteCardProps) {
           <Badge className={mission.status === 'dispatched' ? 'bg-purple-100 text-purple-800' : 'bg-yellow-100 text-yellow-800'}>
             {mission.status === 'dispatched' ? 'Prête' : 'En cours'}
           </Badge>
+        </div>
+        <div className="flex items-center gap-2 mb-2">
+          <Badge variant="secondary" className="text-xs">
+            {mission.mission_type === 'circuit' ? 'Circuit Multi-jours' : mission.mission_type}
+          </Badge>
+          {circuitCount > 0 && (
+            <Badge variant="outline" className="text-xs">
+              {circuitCount} circuits
+            </Badge>
+          )}
         </div>
         <h3 className="font-medium truncate mb-2">{mission.title}</h3>
         <div className="space-y-1 text-sm text-muted-foreground">
@@ -128,6 +190,7 @@ function RouteSheetDetail({ mission, onClose }: RouteSheetDetailProps) {
   });
 
   const waypoints = mission.waypoints?.sort((a, b) => a.sequence_order - b.sequence_order) || [];
+  const circuitDetails = extractCircuitDetails(mission.notes);
 
   const handleAddWaypoint = async () => {
     await createWaypoint.mutateAsync({
@@ -318,6 +381,41 @@ function RouteSheetDetail({ mission, onClose }: RouteSheetDetailProps) {
             </div>
           </div>
         </div>
+
+        {mission.mission_type === 'circuit' && circuitDetails.length > 0 && (
+          <div className="p-4 border rounded-lg space-y-3">
+            <h4 className="font-medium flex items-center gap-2">
+              <RouteIcon className="w-4 h-4" />
+              Détails des circuits
+            </h4>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {circuitDetails.map((circuit) => (
+                <div key={circuit.circuitNumber} className="rounded-lg border p-3 bg-muted/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold">Circuit {circuit.circuitNumber}</p>
+                    <Badge variant="outline" className="text-xs">
+                      {formatShortDate(circuit.startDate)} → {formatShortDate(circuit.endDate)}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                      départ: {circuit.startTime || '--:--'} | retour: {circuit.endTime || '--:--'}
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                      {circuit.pickupLocation}
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                      {circuit.dropoffLocation}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Driver Instructions */}
         {mission.driver_instructions && (
