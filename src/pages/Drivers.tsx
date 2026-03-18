@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Users, Search, Filter, LayoutGrid, List, UserCheck, UserX, Clock, Loader2, Car, Wifi, WifiOff, Plus, Bug, SquarePen, Trash2, History, FileDown } from 'lucide-react';
+import { Users, Search, Filter, LayoutGrid, List, UserCheck, UserX, Clock, Loader2, Car, Wifi, WifiOff, Plus, Bug, SquarePen, Trash2, History, FileDown, AlertTriangle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,9 @@ import { useDeleteDriver, useUpdateDriver } from '@/hooks/useDrivers';
 import { useMissions } from '@/hooks/useMissions';
 import { useVoyages } from '@/hooks/useTransportBTP';
 import { useTourismMissions } from '@/hooks/useTourism';
+import { useInfractions } from '@/hooks/usePersonnel';
+import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
+import { supabase } from '@/integrations/supabase/client';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -68,6 +71,16 @@ interface DriverTimelineRow {
   source: string;
 }
 
+interface DriverInfractionRow {
+  id: string;
+  infractionDate: string;
+  infractionType: string;
+  location: string | null;
+  amount: number;
+  pointsDeducted: number | null;
+  status: string | null;
+}
+
 function toDayKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -80,6 +93,42 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatDateOnly(value: string) {
+  return new Date(value).toLocaleDateString('fr-FR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
+
+function normalizeName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+const dataUrlFromBlob = async (blob: Blob) =>
+  await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Failed to read image'));
+    reader.readAsDataURL(blob);
+  });
+
+function extractStoragePath(logo: string) {
+  if (!logo) return null;
+  if (!logo.startsWith('http')) return logo.split('?')[0];
+
+  const publicMarker = '/storage/v1/object/public/tourism-assets/';
+  const signedMarker = '/storage/v1/object/sign/tourism-assets/';
+
+  const publicIdx = logo.indexOf(publicMarker);
+  if (publicIdx >= 0) return logo.slice(publicIdx + publicMarker.length).split('?')[0];
+
+  const signedIdx = logo.indexOf(signedMarker);
+  if (signedIdx >= 0) return logo.slice(signedIdx + signedMarker.length).split('?')[0];
+
+  return null;
 }
 
 function getDriverHistoryKey(driverId: string) {
@@ -141,6 +190,8 @@ export default function Drivers() {
   const { data: missions = [] } = useMissions();
   const { data: voyages = [] } = useVoyages();
   const { data: tourismMissions = [] } = useTourismMissions();
+  const { data: infractions = [] } = useInfractions();
+  const { data: companyProfile } = useTourismCompanyProfile();
   const updateDriver = useUpdateDriver();
   const deleteDriver = useDeleteDriver();
   const [restDialogDriver, setRestDialogDriver] = useState<MappedDriver | null>(null);
@@ -395,6 +446,32 @@ export default function Drivers() {
     );
   }, [getVehicleLabel, historyDialogDriver, missions, tourismMissions, voyages]);
 
+  const driverInfractions = useMemo<DriverInfractionRow[]>(() => {
+    if (!historyDialogDriver) return [];
+    const driverName = normalizeName(historyDialogDriver.name);
+    return infractions
+      .filter((infraction) => {
+        const personnelName = infraction.personnel
+          ? normalizeName(`${infraction.personnel.first_name} ${infraction.personnel.last_name}`)
+          : '';
+        return (
+          personnelName === driverName ||
+          personnelName.includes(driverName) ||
+          driverName.includes(personnelName)
+        );
+      })
+      .map((infraction) => ({
+        id: infraction.id,
+        infractionDate: infraction.infraction_date,
+        infractionType: infraction.infraction_type,
+        location: infraction.location,
+        amount: Number(infraction.amount || 0),
+        pointsDeducted: infraction.points_deducted,
+        status: infraction.status,
+      }))
+      .sort((a, b) => new Date(b.infractionDate).getTime() - new Date(a.infractionDate).getTime());
+  }, [historyDialogDriver, infractions]);
+
   const historyStats = useMemo(() => {
     if (!historyDialogDriver) {
       return { reposDays: 0, missionDays: 0, disponibleDays: 0, vehiclesUsed: [] as string[] };
@@ -443,35 +520,216 @@ export default function Drivers() {
     };
   }, [historyDialogDriver, historyTimeline, historyWindowDays]);
 
-  const handleDownloadHistoryPdf = () => {
+  const infractionStats = useMemo(() => {
+    const now = new Date();
+    const rangeStart = new Date();
+    rangeStart.setDate(now.getDate() - (historyWindowDays - 1));
+    rangeStart.setHours(0, 0, 0, 0);
+
+    const inRange = driverInfractions.filter(
+      (item) => new Date(item.infractionDate).getTime() >= rangeStart.getTime()
+    );
+    const unpaidCount = inRange.filter((item) => (item.status || 'unpaid') === 'unpaid').length;
+    const totalAmount = inRange.reduce((sum, item) => sum + item.amount, 0);
+    const totalPoints = inRange.reduce((sum, item) => sum + (item.pointsDeducted || 0), 0);
+
+    return {
+      totalInRange: inRange.length,
+      unpaidInRange: unpaidCount,
+      amountInRange: totalAmount,
+      pointsInRange: totalPoints,
+    };
+  }, [driverInfractions, historyWindowDays]);
+
+  const handleDownloadHistoryPdf = async () => {
     if (!historyDialogDriver) return;
     const doc = new jsPDF();
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, 210, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
-    doc.text(`Historique Chauffeur`, 14, 14);
-    doc.setFontSize(12);
-    doc.text(historyDialogDriver.name, 14, 22);
-    doc.setFontSize(10);
-    doc.text(`Fenêtre: ${historyWindowDays} jours`, 196, 14, { align: 'right' });
-    doc.text(`Généré: ${formatDateTime(new Date().toISOString())}`, 196, 22, { align: 'right' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const generatedAt = formatDateTime(new Date().toISOString());
+    const companyName = companyProfile?.company_name || 'Parc gps';
+    const contactLine = [companyProfile?.contact_email, companyProfile?.contact_phone].filter(Boolean).join(' | ');
+    const footerLine = [companyProfile?.address, companyProfile?.tax_info].filter(Boolean).join(' | ');
+    const statusLabelByKey: Record<string, string> = {
+      unpaid: 'Non payé',
+      paid: 'Payé',
+      contested: 'Contesté',
+    };
 
-    doc.setTextColor(17, 24, 39);
+    const loadCompanyLogoDataUrl = async () => {
+      if (!companyProfile?.logo_url) return null;
+      try {
+        const path = extractStoragePath(companyProfile.logo_url);
+        if (path) {
+          const { data: fileBlob, error } = await supabase.storage.from('tourism-assets').download(path);
+          if (!error && fileBlob) {
+            return await dataUrlFromBlob(fileBlob);
+          }
+        }
+        const srcUrl = companyProfile.logo_url.includes('?')
+          ? companyProfile.logo_url
+          : `${companyProfile.logo_url}?t=${Date.now()}`;
+        const response = await fetch(srcUrl, { cache: 'no-cache', headers: { Accept: 'image/*' } });
+        if (!response.ok) return null;
+        return await dataUrlFromBlob(await response.blob());
+      } catch {
+        return null;
+      }
+    };
+
+    const logoDataUrl = await loadCompanyLogoDataUrl();
+
+    doc.setFillColor(6, 18, 40);
+    doc.rect(0, 0, pageWidth, 36, 'F');
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 7, 24, 22, 2, 2, 'F');
+    if (logoDataUrl) {
+      const formatMatch = logoDataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/);
+      const rawFormat = formatMatch ? formatMatch[1].toUpperCase() : 'PNG';
+      const format = rawFormat === 'JPG' ? 'JPEG' : rawFormat;
+      doc.addImage(logoDataUrl, format as any, 15, 8, 22, 20, undefined, 'FAST');
+    } else {
+      const initials = companyName
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() || '')
+        .join('');
+      doc.setTextColor(6, 18, 40);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(initials || 'PG', 26, 20, { align: 'center' });
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Historique Chauffeur', 44, 15);
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(11);
-    doc.text(`Repos: ${historyStats.reposDays} j`, 14, 42);
-    doc.text(`Disponible: ${historyStats.disponibleDays} j`, 70, 42);
-    doc.text(`En activité: ${historyStats.missionDays} j`, 130, 42);
-    doc.text(`Véhicules: ${historyStats.vehiclesUsed.join(', ') || '-'}`, 14, 50);
+    doc.text(companyName, 44, 23);
+    doc.setFontSize(10);
+    doc.text(`${historyDialogDriver.name} • ${historyDialogDriver.vehiclePlate || '-'}`, 44, 30);
+    doc.setFontSize(9.5);
+    doc.text(`Fenêtre: ${historyWindowDays} jours`, pageWidth - 14, 16, { align: 'right' });
+    doc.text(`Généré: ${generatedAt}`, pageWidth - 14, 23, { align: 'right' });
+    doc.text(`Source: Parc Drivers`, pageWidth - 14, 30, { align: 'right' });
+
+    const cardWidth = (pageWidth - 28 - 8) / 3;
+    const cardHeight = 16;
+    const cards = [
+      { title: 'Repos', value: `${historyStats.reposDays} j`, subtitle: 'Jours', color: [124, 58, 237] as [number, number, number] },
+      { title: 'Disponible', value: `${historyStats.disponibleDays} j`, subtitle: 'Jours', color: [5, 150, 105] as [number, number, number] },
+      { title: 'Activité', value: `${historyStats.missionDays} j`, subtitle: 'Jours', color: [3, 105, 161] as [number, number, number] },
+      { title: 'Infractions', value: `${infractionStats.totalInRange}`, subtitle: `${infractionStats.unpaidInRange} non payées`, color: [180, 83, 9] as [number, number, number] },
+      { title: 'Montant', value: infractionStats.amountInRange.toFixed(2), subtitle: 'Total période', color: [30, 64, 175] as [number, number, number] },
+      { title: 'Points', value: `${infractionStats.pointsInRange}`, subtitle: 'Déduits', color: [153, 27, 27] as [number, number, number] },
+    ];
+
+    cards.forEach((card, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      const x = 14 + col * (cardWidth + 4);
+      const y = 42 + row * (cardHeight + 4);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2, 'FD');
+      doc.setFillColor(card.color[0], card.color[1], card.color[2]);
+      doc.roundedRect(x, y, 2.8, cardHeight, 1, 1, 'F');
+      doc.setTextColor(71, 85, 105);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(card.title, x + 6, y + 5);
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(card.value, x + 6, y + 10.5);
+      doc.setTextColor(100, 116, 139);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(card.subtitle, x + 6, y + 14);
+    });
+
+    let cursorY = 42 + 2 * (cardHeight + 4) + 5;
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('Chronologie activité', 14, cursorY);
 
     autoTable(doc, {
-      startY: 58,
+      startY: cursorY + 2,
       head: [['Date & heure', 'Événement', 'Véhicule', 'Source']],
-      body: historyTimeline.slice(0, 120).map((row) => [formatDateTime(row.at), row.label, row.vehicle, row.source]),
-      theme: 'striped',
-      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-      styles: { fontSize: 9, cellPadding: 2.5 },
+      body: historyTimeline.slice(0, 200).map((row) => [formatDateTime(row.at), row.label, row.vehicle, row.source]),
+      theme: 'grid',
+      margin: { left: 14, right: 14, bottom: 22 },
+      headStyles: { fillColor: [6, 18, 40], textColor: 255, fontStyle: 'bold' },
+      styles: { font: 'helvetica', fontSize: 8.7, cellPadding: 2.4, textColor: [15, 23, 42], overflow: 'linebreak' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { cellWidth: 31 },
+        1: { cellWidth: 93 },
+        2: { cellWidth: 32 },
+        3: { cellWidth: 26 },
+      },
     });
+
+    const timelineFinalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || cursorY + 2;
+    const infractionTableStartY = timelineFinalY + 10;
+    if (infractionTableStartY > pageHeight - 70) {
+      doc.addPage();
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('Historique des infractions', 14, 20);
+    } else {
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('Historique des infractions', 14, infractionTableStartY - 2);
+    }
+
+    autoTable(doc, {
+      startY: infractionTableStartY > pageHeight - 70 ? 22 : infractionTableStartY,
+      head: [['Date', 'Type', 'Lieu', 'Montant', 'Points', 'Statut']],
+      body:
+        driverInfractions.length > 0
+          ? driverInfractions.slice(0, 200).map((infraction) => [
+              formatDateOnly(infraction.infractionDate),
+              infraction.infractionType,
+              infraction.location || '-',
+              infraction.amount.toFixed(2),
+              infraction.pointsDeducted ?? '-',
+              statusLabelByKey[infraction.status || 'unpaid'] || infraction.status || 'Non payé',
+            ])
+          : [['-', 'Aucune infraction sur la période', '-', '-', '-', '-']],
+      theme: 'grid',
+      margin: { left: 14, right: 14, bottom: 22 },
+      headStyles: { fillColor: [120, 53, 15], textColor: 255, fontStyle: 'bold' },
+      styles: { font: 'helvetica', fontSize: 8.6, cellPadding: 2.3, textColor: [15, 23, 42], overflow: 'linebreak' },
+      alternateRowStyles: { fillColor: [255, 247, 237] },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 50 },
+        2: { cellWidth: 44 },
+        3: { cellWidth: 22, halign: 'right' },
+        4: { cellWidth: 16, halign: 'center' },
+        5: { cellWidth: 28 },
+      },
+    });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i += 1) {
+      doc.setPage(i);
+      const currentHeight = doc.internal.pageSize.getHeight();
+      doc.setDrawColor(226, 232, 240);
+      doc.line(14, currentHeight - 17, pageWidth - 14, currentHeight - 17);
+      doc.setTextColor(100, 116, 139);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.2);
+      if (contactLine) doc.text(contactLine, 14, currentHeight - 11);
+      if (footerLine) doc.text(footerLine, 14, currentHeight - 6);
+      doc.text(`Page ${i}/${totalPages}`, pageWidth - 14, currentHeight - 6, { align: 'right' });
+    }
 
     doc.save(`historique-chauffeur-${historyDialogDriver.name.replace(/\s+/g, '-').toLowerCase()}.pdf`);
   };
@@ -882,7 +1140,7 @@ export default function Drivers() {
                 Télécharger PDF
               </Button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <Card>
                 <CardContent className="p-4">
                   <p className="text-sm text-muted-foreground">Jours repos</p>
@@ -907,6 +1165,18 @@ export default function Drivers() {
                   <p className="text-2xl font-semibold">{historyStats.vehiclesUsed.length}</p>
                 </CardContent>
               </Card>
+              <Card className="border-amber-500/30 bg-amber-500/5">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">Infractions</p>
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <p className="text-2xl font-semibold text-amber-300">{infractionStats.totalInRange}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {infractionStats.unpaidInRange} non payée{infractionStats.unpaidInRange > 1 ? 's' : ''}
+                  </p>
+                </CardContent>
+              </Card>
             </div>
             <Card>
               <CardContent className="p-0">
@@ -929,6 +1199,63 @@ export default function Drivers() {
                   ) : (
                     <div className="px-4 py-6 text-sm text-muted-foreground text-center">
                       Aucun historique disponible pour cette période.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-amber-500/25">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between px-4 py-3 border-b bg-amber-500/10">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <p className="text-sm font-semibold text-amber-200">Historique des infractions</p>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Montant {infractionStats.amountInRange.toFixed(2)} • Points {infractionStats.pointsInRange}
+                  </div>
+                </div>
+                <div className="grid grid-cols-6 gap-2 px-4 py-2 border-b bg-muted/30 text-xs font-semibold text-muted-foreground">
+                  <span>Date</span>
+                  <span>Type</span>
+                  <span>Lieu</span>
+                  <span className="text-right">Montant</span>
+                  <span className="text-center">Points</span>
+                  <span>Statut</span>
+                </div>
+                <div className="max-h-[260px] overflow-y-auto">
+                  {driverInfractions.length > 0 ? (
+                    driverInfractions.slice(0, 120).map((infraction) => (
+                      <div key={infraction.id} className="grid grid-cols-6 gap-2 px-4 py-2 border-b text-sm">
+                        <span className="text-muted-foreground">{formatDateOnly(infraction.infractionDate)}</span>
+                        <span className="truncate" title={infraction.infractionType}>{infraction.infractionType}</span>
+                        <span className="truncate" title={infraction.location || '-'}>{infraction.location || '-'}</span>
+                        <span className="text-right">{infraction.amount.toFixed(2)}</span>
+                        <span className="text-center">{infraction.pointsDeducted ?? '-'}</span>
+                        <span>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-xs',
+                              (infraction.status || 'unpaid') === 'paid'
+                                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                : (infraction.status || 'unpaid') === 'contested'
+                                  ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
+                                  : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                            )}
+                          >
+                            {(infraction.status || 'unpaid') === 'paid'
+                              ? 'Payé'
+                              : (infraction.status || 'unpaid') === 'contested'
+                                ? 'Contesté'
+                                : 'Non payé'}
+                          </Badge>
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6 text-sm text-muted-foreground text-center">
+                      Aucune infraction liée à ce chauffeur.
                     </div>
                   )}
                 </div>

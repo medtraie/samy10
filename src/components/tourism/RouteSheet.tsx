@@ -217,8 +217,8 @@ function RouteSheetDetail({ mission, onClose }: RouteSheetDetailProps) {
   };
 
   return (
-    <Card className="print:shadow-none">
-      <CardHeader className="print:border-b">
+    <Card className="print:shadow-none print:bg-white print:text-black print:border print:border-black">
+      <CardHeader className="print:border-b print:border-black">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
@@ -383,12 +383,12 @@ function RouteSheetDetail({ mission, onClose }: RouteSheetDetailProps) {
         </div>
 
         {mission.mission_type === 'circuit' && circuitDetails.length > 0 && (
-          <div className="p-4 border rounded-lg space-y-3">
+          <div className="p-4 border rounded-lg space-y-3 print:border-black print:rounded-none print:break-inside-avoid">
             <h4 className="font-medium flex items-center gap-2">
               <RouteIcon className="w-4 h-4" />
               Détails des circuits
             </h4>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 print:hidden">
               {circuitDetails.map((circuit) => (
                 <div key={circuit.circuitNumber} className="rounded-lg border p-3 bg-muted/30">
                   <div className="flex items-center justify-between mb-2">
@@ -413,6 +413,34 @@ function RouteSheetDetail({ mission, onClose }: RouteSheetDetailProps) {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="hidden print:block">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="border border-black px-2 py-1 text-left font-semibold">Circuit</th>
+                    <th className="border border-black px-2 py-1 text-left font-semibold">Date de début</th>
+                    <th className="border border-black px-2 py-1 text-left font-semibold">Heure départ</th>
+                    <th className="border border-black px-2 py-1 text-left font-semibold">Date de fin</th>
+                    <th className="border border-black px-2 py-1 text-left font-semibold">Heure retour</th>
+                    <th className="border border-black px-2 py-1 text-left font-semibold">Lieu de prise en charge</th>
+                    <th className="border border-black px-2 py-1 text-left font-semibold">Lieu de destination</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {circuitDetails.map((circuit) => (
+                    <tr key={`print-circuit-${circuit.circuitNumber}`}>
+                      <td className="border border-black px-2 py-1">Circuit {circuit.circuitNumber}</td>
+                      <td className="border border-black px-2 py-1">{formatShortDate(circuit.startDate)}</td>
+                      <td className="border border-black px-2 py-1">{circuit.startTime || '--:--'}</td>
+                      <td className="border border-black px-2 py-1">{formatShortDate(circuit.endDate)}</td>
+                      <td className="border border-black px-2 py-1">{circuit.endTime || '--:--'}</td>
+                      <td className="border border-black px-2 py-1">{circuit.pickupLocation}</td>
+                      <td className="border border-black px-2 py-1">{circuit.dropoffLocation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
