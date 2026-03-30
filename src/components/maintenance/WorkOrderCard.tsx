@@ -22,19 +22,20 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { WorkOrder } from '@/lib/mock-data';
-import { mockVehicles } from '@/lib/mock-data';
 
 interface WorkOrderCardProps {
   workOrder: WorkOrder;
+  vehiclePlate?: string;
+  vehicleSubtitle?: string;
+  overdue?: boolean;
   onView?: (wo: WorkOrder) => void;
   onEdit?: (wo: WorkOrder) => void;
+  onStart?: (wo: WorkOrder) => void;
   onComplete?: (wo: WorkOrder) => void;
   onDelete?: (wo: WorkOrder) => void;
 }
 
-export function WorkOrderCard({ workOrder, onView, onEdit, onComplete, onDelete }: WorkOrderCardProps) {
-  const vehicle = mockVehicles.find(v => v.id === workOrder.vehicleId);
-
+export function WorkOrderCard({ workOrder, vehiclePlate, vehicleSubtitle, overdue, onView, onEdit, onStart, onComplete, onDelete }: WorkOrderCardProps) {
   const getStatusBadge = (status: WorkOrder['status']) => {
     switch (status) {
       case 'pending':
@@ -80,7 +81,7 @@ export function WorkOrderCard({ workOrder, onView, onEdit, onComplete, onDelete 
   };
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className={`hover:shadow-md transition-shadow ${overdue && workOrder.status !== 'completed' ? 'border-red-500/40' : ''}`}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div>
@@ -107,6 +108,12 @@ export function WorkOrderCard({ workOrder, onView, onEdit, onComplete, onDelete 
                 <Edit className="h-4 w-4 mr-2" />
                 Modifier
               </DropdownMenuItem>
+              {workOrder.status === 'pending' && (
+                <DropdownMenuItem onClick={() => onStart?.(workOrder)}>
+                  <Wrench className="h-4 w-4 mr-2 text-amber-600" />
+                  Démarrer
+                </DropdownMenuItem>
+              )}
               {onDelete && (
                 <>
                   <DropdownMenuSeparator />
@@ -133,8 +140,8 @@ export function WorkOrderCard({ workOrder, onView, onEdit, onComplete, onDelete 
               <Wrench className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <p className="font-medium text-sm">{vehicle?.plate}</p>
-              <p className="text-xs text-muted-foreground">{vehicle?.brand} {vehicle?.model}</p>
+              <p className="font-medium text-sm">{vehiclePlate || workOrder.vehicleId}</p>
+              <p className="text-xs text-muted-foreground">{vehicleSubtitle || 'Véhicule GPS'}</p>
             </div>
           </div>
           {getPriorityBadge(workOrder.priority)}

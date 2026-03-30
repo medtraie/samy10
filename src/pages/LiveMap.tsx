@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Truck, Loader2, Layers } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -11,6 +11,7 @@ import { RefreshControls } from '@/components/map/RefreshControls';
 import { VehicleListItem } from '@/components/map/VehicleListItem';
 import { TraceursControl } from '@/components/map/TraceursControl';
 import { useGPSwoxVehicles, GPSwoxVehicle } from '@/hooks/useGPSwoxVehicles';
+import { useLocation } from 'react-router-dom';
 
 export default function LiveMap() {
   const { i18n } = useTranslation();
@@ -22,14 +23,28 @@ export default function LiveMap() {
   const [activeFilter, setActiveFilter] = useState<VehicleFilter>('all');
   const [isPaused, setIsPaused] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(10000);
-  const [enableClustering, setEnableClustering] = useState(true);
+  const [enableClustering, setEnableClustering] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<Date>();
   const [mapLayer, setMapLayer] = useState<MapLayerType>('google-streets');
   const [traceurVehicleIds, setTraceurVehicleIds] = useState<Set<string>>(new Set());
+  const location = useLocation();
 
   const { data: vehicles = [], isLoading, error, refetch, isFetching } = useGPSwoxVehicles(
     isPaused ? 0 : refreshInterval
   );
+
+  useEffect(() => {
+    const state = location.state as { vehicleId?: string } | null;
+    if (state?.vehicleId) {
+      const id = String(state.vehicleId);
+      setSelectedVehicleId(id);
+      setFollowingVehicleId(id);
+      const found = vehicles.find((v) => String(v.id) === id);
+      if (found?.plate) {
+        setSearchQuery(found.plate);
+      }
+    }
+  }, [location.state, vehicles]);
 
   // Update last update time when data changes
   useMemo(() => {

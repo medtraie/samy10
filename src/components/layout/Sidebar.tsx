@@ -20,7 +20,6 @@ import {
   ChevronRight,
   LogOut,
   Palmtree,
-  HardHat,
   Bus,
   PackageCheck,
   BookOpen,
@@ -43,27 +42,26 @@ interface SidebarProps {
 const navItems = [
   { key: 'dashboard', icon: LayoutDashboard, path: '/', module: 'dashboard' },
   { key: 'vehicles', icon: Truck, path: '/vehicles', module: 'vehicles' },
+  { key: 'liveMap', icon: MapPin, path: '/live-map', module: 'live_map' },
   { key: 'drivers', icon: Users, path: '/drivers', module: 'drivers' },
   { key: 'personnel', icon: UserCog, path: '/personnel', module: 'personnel' },
-  { key: 'liveMap', icon: MapPin, path: '/live-map', module: 'live_map' },
-  { key: 'missions', icon: Package, path: '/missions', module: 'missions' },
   { key: 'rental', icon: KeyRound, path: '/location-vehicules', module: 'rental' },
-  { key: 'transportBTP', icon: HardHat, path: '/transport-btp', module: 'transport_btp' },
   { key: 'transportTouristique', icon: Palmtree, path: '/transport-touristique', module: 'transport_touristique' },
   { key: 'transportVoyageurs', icon: Bus, path: '/transport-voyageurs', module: 'transport_voyageurs' },
   { key: 'transportTMS', icon: PackageCheck, path: '/transport-tms', module: 'transport_tms' },
-  { key: 'clients', icon: Users, path: '/clients', module: 'clients' },
-  { key: 'revisions', icon: FileText, path: '/revisions', module: 'revisions' },
+  { key: 'missions', icon: Package, path: '/missions', module: 'missions' },
+  { key: 'stock', icon: Boxes, path: '/stock', module: 'stock' },
   { key: 'fuel', icon: Fuel, path: '/fuel', module: 'fuel' },
   { key: 'oil', icon: Droplets, path: '/oil', module: 'oil' },
   { key: 'citerne', icon: Droplets, path: '/citerne', module: 'citerne' },
+  { key: 'revisions', icon: FileText, path: '/revisions', module: 'revisions' },
   { key: 'maintenance', icon: Wrench, path: '/maintenance', module: 'maintenance' },
-  { key: 'stock', icon: Boxes, path: '/stock', module: 'stock' },
-  { key: 'achats', icon: ShoppingCart, path: '/achats', module: 'achats' },
-  { key: 'comptabilite', icon: BookOpen, path: '/comptabilite', module: 'comptabilite' },
-  { key: 'finance', icon: DollarSign, path: '/finance', module: 'finance' },
-  { key: 'reports', icon: FileText, path: '/reports', module: 'reports' },
+  { key: 'clients', icon: Users, path: '/clients', module: 'clients' },
   { key: 'societe', icon: Building2, path: '/societe', module: 'societe' },
+  { key: 'achats', icon: ShoppingCart, path: '/achats', module: 'achats' },
+  { key: 'finance', icon: DollarSign, path: '/finance', module: 'finance' },
+  { key: 'comptabilite', icon: BookOpen, path: '/comptabilite', module: 'comptabilite' },
+  { key: 'reports', icon: FileText, path: '/reports', module: 'reports' },
   { key: 'alerts', icon: Bell, path: '/alerts', module: 'alerts', badge: 4 },
   { key: 'settings', icon: Settings, path: '/settings' },
 ];
@@ -102,20 +100,20 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'fixed top-0 h-screen flex flex-col z-50 border border-slate-900/60 dark:border-sidebar-border/80 bg-gradient-to-b from-slate-950/95 via-slate-900/95 to-slate-950/95 backdrop-blur-md shadow-xl transition-all duration-300',
+        'fixed top-0 h-screen flex flex-col z-50 border bg-sidebar-background text-sidebar-foreground shadow-xl transition-all duration-300',
         collapsed ? 'w-20' : 'w-64',
-        isRTL ? 'right-0 border-l' : 'left-0 border-r'
+        isRTL ? 'right-0 border-l border-sidebar-border' : 'left-0 border-r border-sidebar-border'
       )}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center px-4 border-b border-sidebar-border/60">
+      <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
         <div className="flex items-center gap-3 flex-1">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/70 shadow-sm">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-white shadow-sm border border-border">
             <img src="/Parc_Gps_logo_transparent-10.png" alt="Parc gps" className="w-8 h-8 object-contain" />
           </div>
           {!collapsed && (
             <div>
-              <h1 className="text-base font-bold text-sidebar-foreground">Parc gps</h1>
+              <h1 className="text-base font-bold">Parc gps</h1>
               <p className="text-[10px] text-sidebar-muted uppercase tracking-wider">Maroc</p>
             </div>
           )}
@@ -137,15 +135,15 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
       </div>
 
       {/* Company Selector */}
-      <div className="px-3 py-3 border-b border-sidebar-border/60">
-        <button className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-sidebar-accent/70 hover:bg-sidebar-accent/90 transition-colors">
+      <div className="px-3 py-3 border-b border-sidebar-border">
+        <button className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-foreground transition-colors">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center">
-              <span className="text-xs font-semibold text-primary">TM</span>
+            <div className="w-8 h-8 rounded-full bg-sidebar-primary/15 flex items-center justify-center">
+              <span className="text-xs font-semibold text-sidebar-primary">TM</span>
             </div>
             {!collapsed && (
               <div className={cn('text-left', isRTL && 'text-right')}>
-                <p className="text-sm font-medium text-sidebar-foreground">Trans Maroc SARL</p>
+                <p className="text-sm font-medium">Trans Maroc SARL</p>
                 <p className="text-xs text-sidebar-muted">6 véhicules</p>
               </div>
             )}
@@ -196,7 +194,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border/60">
+      <div className="p-4 border-t border-sidebar-border">
         <div className={cn('flex items-center gap-3 px-2', collapsed && 'justify-center')}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-info flex items-center justify-center">
             <span className="text-xs font-bold text-white">
@@ -215,7 +213,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             variant="ghost"
             size="icon"
             onClick={handleSignOut}
-            className="h-8 w-8 text-sidebar-muted hover:text-destructive"
+            className="h-8 w-8 text-sidebar-muted hover:text-destructive hover:bg-destructive/10"
             title="Déconnexion"
           >
             <LogOut className="w-4 h-4" />

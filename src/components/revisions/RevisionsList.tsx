@@ -75,17 +75,34 @@ export function RevisionsList({ revisions: external }: RevisionsListProps) {
     return 'text-muted-foreground';
   };
 
+  const getTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      vidange: 'Vidange',
+      vignette: 'Vignette',
+      visite_technique: 'Visite technique',
+      assurance: 'Assurance',
+      chaine_distribution: 'Chaîne de distribution',
+      adblue: 'Adblue',
+      vidange_boite: 'Vidange boîte',
+      autre_document: 'Autre'
+    };
+    return labels[type] || type;
+  };
+
   return (
     <Card className="dashboard-panel">
-      <CardContent className="p-0">
+      <CardContent className="p-0 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Véhicule</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Mode</TableHead>
+              <TableHead>Dernier Entretien</TableHead>
+              <TableHead>Actuel</TableHead>
               <TableHead>Prochaine échéance</TableHead>
               <TableHead>Écart</TableHead>
+              <TableHead>Rappel (km)</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -96,7 +113,7 @@ export function RevisionsList({ revisions: external }: RevisionsListProps) {
                 <TableCell className="font-medium">{rev.vehicle_plate}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <span>{rev.type.replace('_', ' ')}</span>
+                    <span>{getTypeLabel(rev.type)}</span>
                     {rev.file_url && (
                       <a
                         href={rev.file_url}
@@ -111,9 +128,27 @@ export function RevisionsList({ revisions: external }: RevisionsListProps) {
                   </div>
                 </TableCell>
                 <TableCell>{rev.mode === 'days' ? 'Jours' : 'Km'}</TableCell>
+                
+                <TableCell>
+                  {rev.mode === 'days' && rev.last_date ? (
+                    new Date(rev.last_date).toLocaleDateString('fr-FR')
+                  ) : rev.mode === 'km' && rev.last_km != null ? (
+                    `${rev.last_km.toLocaleString()} km`
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+
+                <TableCell>
+                  {rev.mode === 'km' && rev.currentKm != null ? `${rev.currentKm.toLocaleString()} km` : '-'}
+                </TableCell>
+
                 <TableCell>{formatDue(rev)}</TableCell>
                 <TableCell className={remainingClass(rev.status)}>
                   {remainingLabel(rev)}
+                </TableCell>
+                <TableCell>
+                  {rev.mode === 'km' && rev.reminder_km ? `${rev.reminder_km.toLocaleString()} km` : '-'}
                 </TableCell>
                 <TableCell>{statusBadge(rev.status)}</TableCell>
                 <TableCell className="text-right">

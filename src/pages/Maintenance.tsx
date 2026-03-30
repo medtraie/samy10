@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { WorkOrderCard } from '@/components/maintenance/WorkOrderCard';
@@ -33,6 +33,7 @@ import {
   DollarSign,
   ClipboardList,
   Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   useMaintenance,
@@ -50,43 +51,53 @@ interface WorkOrderCardData {
   id: string;
   reference: string;
   vehicleId: string;
-  type: 'preventive' | 'corrective';
+  type: 'preventive' | 'corrective' | 'inspection';
   priority: 'low' | 'medium' | 'high';
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   description: string;
   assignedTo: string;
   createdDate: string;
   scheduledDate: string;
+  diagnosis?: string;
+  garage?: string;
+  notes?: string;
   completedDate?: string;
   laborCost: number;
   partsCost: number;
   totalCost: number;
-  parts: Array<{ name: string; quantity: number; unitPrice: number }>;
+  parts: Array<{ name: string; quantity: number; unitPrice: number; stockItemId?: string | null }>;
 }
 
 function mapDBToCard(m: MaintenanceRecord): WorkOrderCardData {
-  const statusMap: Record<string, 'pending' | 'in_progress' | 'completed'> = {
+  const statusMap: Record<string, 'pending' | 'in_progress' | 'completed' | 'cancelled'> = {
     scheduled: 'pending',
     in_progress: 'in_progress',
     completed: 'completed',
-    cancelled: 'completed',
+    cancelled: 'cancelled',
   };
+  const parts = Array.isArray(m.parts) ? m.parts : [];
+  const laborCost = Number(m.labor_cost) || 0;
+  const partsCost = Number(m.parts_cost) || 0;
+  const totalCost = Number(m.cost) || laborCost + partsCost;
   return {
     id: m.id,
     reference: `OT-${m.id.substring(0, 8).toUpperCase()}`,
     vehicleId: m.vehicle_id,
-    type: 'corrective',
-    priority: 'medium',
+    type: m.work_order_type || 'corrective',
+    priority: m.priority || 'medium',
     status: statusMap[m.status] || 'pending',
     description: m.maintenance_type,
     assignedTo: 'Technicien',
     createdDate: m.created_at,
     scheduledDate: m.maintenance_date,
-    completedDate: m.status === 'completed' ? m.updated_at : undefined,
-    laborCost: 0,
-    partsCost: 0,
-    totalCost: Number(m.cost) || 0,
-    parts: [],
+    diagnosis: m.diagnosis || undefined,
+    garage: m.garage || undefined,
+    notes: m.notes || undefined,
+    completedDate: m.completed_at || (m.status === 'completed' ? m.updated_at : undefined),
+    laborCost,
+    partsCost,
+    totalCost,
+    parts,
   };
 }
 
@@ -94,6 +105,7 @@ export default function Maintenance() {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [formOpen, setFormOpen] = useState(false);
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrderCardData | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -106,13 +118,19 @@ export default function Maintenance() {
   const updateMaintenance = useUpdateMaintenance();
   const deleteMaintenance = useDeleteMaintenance();
 
-  const workOrders = maintenanceRecords.map(mapDBToCard);
+  const workOrders = useMemo(() => maintenanceRecords.map(mapDBToCard), [maintenanceRecords]);
+  const vehicleById = useMemo(
+    () => new Map(vehicles.map((vehicle) => [String(vehicle.id), vehicle])),
+    [vehicles],
+  );
+  const today = new Date().toISOString().split('T')[0];
 
   // Stats
   const stats = {
     pending: workOrders.filter(wo => wo.status === 'pending').length,
     inProgress: workOrders.filter(wo => wo.status === 'in_progress').length,
     completed: workOrders.filter(wo => wo.status === 'completed').length,
+    overdue: workOrders.filter(wo => wo.status !== 'completed' && wo.status !== 'cancelled' && wo.scheduledDate < today).length,
     totalCost: workOrders.reduce((acc, wo) => acc + wo.totalCost, 0),
   };
 
@@ -123,7 +141,8 @@ export default function Maintenance() {
       wo.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       vehicle?.plate.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || wo.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesType = typeFilter === 'all' || wo.type === typeFilter;
+    return matchesSearch && matchesStatus && matchesType;
   });
 
   const handleDelete = (wo: WorkOrderCardData) => {
@@ -152,6 +171,17 @@ export default function Maintenance() {
     updateMaintenance.mutate({
       id: wo.id,
       status: 'completed',
+      completed_at: new Date().toISOString(),
+    }, {
+      onSuccess: () => refetch(),
+    });
+  };
+
+  const handleStart = (wo: WorkOrderCardData) => {
+    updateMaintenance.mutate({
+      id: wo.id,
+      status: 'in_progress',
+      completed_at: null,
     }, {
       onSuccess: () => refetch(),
     });
@@ -189,38 +219,46 @@ export default function Maintenance() {
       const totalCost = laborCost + internalStockCost + manualPartsCost;
 
       if (selectedWorkOrder) {
-        updateMaintenance.mutate(
-          {
-            id: selectedWorkOrder.id,
-            maintenance_type: data.description,
-            maintenance_date: data.scheduledDate,
-            vehicle_id: data.vehicleId,
-            cost: totalCost,
-            notes: data.notes,
-          },
-          {
-            onSuccess: () => refetch(),
-          },
-        );
+        await updateMaintenance.mutateAsync({
+          id: selectedWorkOrder.id,
+          maintenance_type: data.description,
+          work_order_type: data.type,
+          priority: data.priority,
+          maintenance_date: data.scheduledDate,
+          vehicle_id: data.vehicleId,
+          diagnosis: data.diagnosis || null,
+          garage: data.garage || null,
+          labor_cost: laborCost,
+          parts_cost: internalStockCost + manualPartsCost,
+          parts,
+          cost: totalCost,
+          notes: data.notes || null,
+          completed_at: selectedWorkOrder.status === 'completed' ? selectedWorkOrder.completedDate || new Date().toISOString() : null,
+        });
       } else {
-        createMaintenance.mutate(
-          {
-            maintenance_type: data.description,
-            maintenance_date: data.scheduledDate,
-            vehicle_id: data.vehicleId,
-            cost: totalCost,
-            notes: data.notes,
-            status: 'scheduled',
-          },
-          {
-            onSuccess: () => refetch(),
-          },
-        );
+        await createMaintenance.mutateAsync({
+          maintenance_type: data.description,
+          work_order_type: data.type,
+          priority: data.priority,
+          maintenance_date: data.scheduledDate,
+          vehicle_id: data.vehicleId,
+          diagnosis: data.diagnosis || null,
+          garage: data.garage || null,
+          labor_cost: laborCost,
+          parts_cost: internalStockCost + manualPartsCost,
+          parts,
+          cost: totalCost,
+          notes: data.notes || null,
+          status: 'scheduled',
+          completed_at: null,
+        });
       }
+      refetch();
       setSelectedWorkOrder(undefined);
     } catch (error: any) {
       console.error('Error while saving maintenance with stock consumption', error);
       toast.error(error?.message || 'Erreur lors de l’enregistrement de la maintenance');
+      throw error;
     }
   };
 
@@ -259,7 +297,7 @@ export default function Maintenance() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card className="dashboard-panel">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -312,6 +350,19 @@ export default function Maintenance() {
               </div>
             </CardContent>
           </Card>
+          <Card className="dashboard-panel">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{stats.overdue}</p>
+                  <p className="text-xs text-muted-foreground">En retard</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Tabs */}
@@ -344,6 +395,18 @@ export default function Maintenance() {
                   <SelectItem value="pending">En attente</SelectItem>
                   <SelectItem value="in_progress">En cours</SelectItem>
                   <SelectItem value="completed">Terminés</SelectItem>
+                  <SelectItem value="cancelled">Annulés</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Tous les types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les types</SelectItem>
+                  <SelectItem value="preventive">Préventif</SelectItem>
+                  <SelectItem value="corrective">Correctif</SelectItem>
+                  <SelectItem value="inspection">Inspection</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -358,15 +421,22 @@ export default function Maintenance() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredWorkOrders.map((wo) => (
+                {filteredWorkOrders.map((wo) => {
+                  const vehicle = vehicleById.get(wo.vehicleId);
+                  return (
                   <WorkOrderCard
                     key={wo.id}
                     workOrder={wo}
+                    vehiclePlate={vehicle?.plate}
+                    vehicleSubtitle={`${vehicle?.brand || ''} ${vehicle?.model || ''}`.trim()}
+                    overdue={wo.status !== 'completed' && wo.status !== 'cancelled' && wo.scheduledDate < today}
                     onEdit={handleEdit}
+                    onStart={handleStart}
                     onComplete={handleComplete}
                     onDelete={handleDelete}
                   />
-                ))}
+                  );
+                })}
               </div>
             )}
           </TabsContent>

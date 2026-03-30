@@ -1,11 +1,11 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useAppSettings, ModuleSettings, useModulesUnlockCode } from '@/hooks/useAppSettings';
-import { Settings, LayoutGrid, ShieldCheck, Bell, Palette, Lock } from 'lucide-react';
+import { Settings, LayoutGrid, ShieldCheck, Bell, Palette, Lock, Eye, EyeOff, Moon, Sun } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme, Theme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,15 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { TOURISM_COMPANY_ID } from '@/hooks/useTourismCompany';
+import { useQueryClient } from '@tanstack/react-query';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/hooks/useAuth';
+
+const GPS_SERVER_OPTIONS = [
+  { key: 's1', label: 'S1', domain: 'www.trackpremierlocation.com' },
+  { key: 's2', label: 'S2', domain: 'www.trackpremier.com' },
+] as const;
 
 const BACKUP_TABLES = [
   'accounting_accounts',
@@ -101,18 +110,38 @@ type ExportTableReport = {
 export default function SettingsPage() {
   const { t } = useTranslation();
   const { moduleSettings, isLoading, updateModuleSettings } = useAppSettings();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, mode, setMode } = useTheme();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const unlockCodeQ = useModulesUnlockCode();
   const expectedModulesCode = useMemo(() => String(unlockCodeQ.code || '').trim(), [unlockCodeQ.code]);
   const [modulesUnlocked, setModulesUnlocked] = useState(() => (typeof window !== 'undefined' ? sessionStorage.getItem('modules_unlock') === '1' : false));
   const [modulesCode, setModulesCode] = useState('');
   const [modulesCodeError, setModulesCodeError] = useState<string | null>(null);
   const [modulesNewCode, setModulesNewCode] = useState('');
+  const [securityUnlocked, setSecurityUnlocked] = useState(() => (typeof window !== 'undefined' ? sessionStorage.getItem('security_unlock') === '1' : false));
+  const [securityCode, setSecurityCode] = useState('');
+  const [securityCodeError, setSecurityCodeError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [exportReport, setExportReport] = useState<ExportTableReport[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const currentCompanyId = TOURISM_COMPANY_ID;
+  const gpsSettingsKey = `gpswox_credentials:${currentCompanyId}`;
+  const [gpsApiUrl, setGpsApiUrl] = useState('');
+  const [gpsEmail, setGpsEmail] = useState('');
+  const [gpsPassword, setGpsPassword] = useState('');
+  const [showGpsPassword, setShowGpsPassword] = useState(false);
+  const [isGpsLoading, setIsGpsLoading] = useState(false);
+  const [isGpsSaving, setIsGpsSaving] = useState(false);
+  const [isGpsTesting, setIsGpsTesting] = useState(false);
+  const [gpsSource, setGpsSource] = useState<'company' | 'global' | 'env'>('env');
+  const [gpsTestStatus, setGpsTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [gpsTestMessage, setGpsTestMessage] = useState('');
+  const [gpsLastTestedAt, setGpsLastTestedAt] = useState<string | null>(null);
+  const [gpsTechnicalError, setGpsTechnicalError] = useState('');
+  const expectedSecurityCode = useMemo(() => String.fromCharCode(83, 97, 109, 121, 51, 50, 49, 46), []);
 
   const handleToggleModule = (moduleKey: keyof ModuleSettings, enabled: boolean) => {
     if (!moduleSettings) return;
@@ -364,6 +393,208 @@ export default function SettingsPage() {
     }
   };
 
+  useEffect(() => {
+    let mounted = true;
+    const loadGpsSettings = async () => {
+      setIsGpsLoading(true);
+      try {
+        const { data: companyData } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', gpsSettingsKey)
+          .maybeSingle();
+
+        const { data: globalData } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'gpswox_credentials')
+          .maybeSingle();
+
+        const companyValue = (companyData?.value || {}) as Record<string, unknown>;
+        const globalValue = (globalData?.value || {}) as Record<string, unknown>;
+        const selected = companyData?.value ? companyValue : globalData?.value ? globalValue : null;
+        const source = companyData?.value ? 'company' : globalData?.value ? 'global' : 'env';
+
+        if (!mounted) return;
+        setGpsApiUrl(
+          selected
+            ? typeof selected.apiUrl === 'string'
+              ? selected.apiUrl
+              : typeof selected.api_url === 'string'
+              ? selected.api_url
+              : ''
+            : ''
+        );
+        setGpsEmail(
+          selected
+            ? typeof selected.email === 'string'
+              ? selected.email
+              : ''
+            : ''
+        );
+        setGpsPassword(
+          selected
+            ? typeof selected.password === 'string'
+              ? selected.password
+              : ''
+            : ''
+        );
+        setGpsSource(source);
+      } catch (error) {
+        if (!mounted) return;
+        toast({
+          title: 'Erreur',
+          description: `Impossible de charger la configuration GPS: ${(error as Error).message}`,
+          variant: 'destructive',
+        });
+      } finally {
+        if (mounted) setIsGpsLoading(false);
+      }
+    };
+
+    loadGpsSettings();
+    return () => {
+      mounted = false;
+    };
+  }, [gpsSettingsKey, toast]);
+
+  const handleSaveGpsSettings = async () => {
+    const apiUrl = gpsApiUrl.trim();
+    const email = gpsEmail.trim();
+    const password = gpsPassword.trim();
+    if (!apiUrl || !email || !password) {
+      toast({
+        title: 'Champs requis',
+        description: 'API URL, Email et Password sont obligatoires.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsGpsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('app_settings')
+        .upsert(
+          {
+            key: gpsSettingsKey,
+            value: {
+              companyId: currentCompanyId,
+              apiUrl,
+              email,
+              password,
+            } as any,
+            description: 'Configuration GPSwox par société',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key,user_id' }
+        );
+      if (error) throw error;
+      setGpsSource('company');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['gpswox-data', currentCompanyId, user?.id || 'anonymous'] }),
+        queryClient.invalidateQueries({ queryKey: ['gpswox-vehicles', currentCompanyId, user?.id || 'anonymous'] }),
+        queryClient.invalidateQueries({ queryKey: ['gpswox-drivers', currentCompanyId, user?.id || 'anonymous'] }),
+        queryClient.invalidateQueries({ queryKey: ['gpswox-alerts', currentCompanyId, user?.id || 'anonymous'] }),
+        queryClient.invalidateQueries({ queryKey: ['gpswox-reports', currentCompanyId, user?.id || 'anonymous'] }),
+        queryClient.invalidateQueries({ queryKey: ['gpswox-geofences', currentCompanyId, user?.id || 'anonymous'] }),
+      ]);
+      toast({
+        title: 'Succès',
+        description: 'Configuration GPS enregistrée.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: `Erreur de sauvegarde: ${(error as Error).message}`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGpsSaving(false);
+    }
+  };
+
+  const handleTestGpsConnection = async () => {
+    const apiUrl = gpsApiUrl.trim();
+    const email = gpsEmail.trim();
+    const password = gpsPassword.trim();
+    if (!apiUrl || !email || !password) {
+      setGpsTestStatus('error');
+      setGpsTestMessage('Renseignez API URL, Email et Password avant le test.');
+      toast({
+        title: 'Champs requis',
+        description: 'Renseignez API URL, Email et Password avant le test.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsGpsTesting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<{
+        success?: boolean;
+        connection?: string;
+        error?: string;
+        technical?: { name?: string; message?: string; stack?: string; logs?: string[] };
+      }>('gpswox', {
+        body: {
+          companyId: currentCompanyId,
+          testOnly: true,
+          credentialsOverride: {
+            apiUrl,
+            email,
+            password,
+          },
+        },
+      });
+      if (error) throw error;
+      if (!data?.success || data.connection !== 'ok') {
+        const technicalDetails = data?.technical
+          ? JSON.stringify(
+              {
+                name: data.technical.name,
+                message: data.technical.message,
+                stack: data.technical.stack,
+                logs: data.technical.logs,
+              },
+              null,
+              2
+            )
+          : '';
+        setGpsTechnicalError(technicalDetails);
+        throw new Error(data?.error || data?.technical?.message || 'Échec de connexion GPS.');
+      }
+      setGpsTestStatus('success');
+      setGpsTestMessage('Connexion GPS valide.');
+      setGpsLastTestedAt(new Date().toISOString());
+      setGpsTechnicalError('');
+      toast({
+        title: 'Connexion réussie',
+        description: 'Le compte GPS est valide et accessible.',
+      });
+    } catch (error) {
+      setGpsTestStatus('error');
+      setGpsTestMessage((error as Error).message);
+      setGpsLastTestedAt(new Date().toISOString());
+      if (!gpsTechnicalError) {
+        setGpsTechnicalError((error as Error).stack || (error as Error).message);
+      }
+      toast({
+        title: 'Connexion échouée',
+        description: (error as Error).message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGpsTesting(false);
+    }
+  };
+
+  const selectedGpsServerKey = useMemo(() => {
+    const normalized = gpsApiUrl.toLowerCase();
+    const match = GPS_SERVER_OPTIONS.find((option) => normalized.includes(option.domain.toLowerCase()));
+    return match?.key || '';
+  }, [gpsApiUrl]);
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -393,6 +624,7 @@ export default function SettingsPage() {
             <TabsTrigger value="security" className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4" />
               Sécurité
+              {!securityUnlocked && <Lock className="h-4 w-4 opacity-70" />}
             </TabsTrigger>
           </TabsList>
 
@@ -568,10 +800,33 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle>Thème de l'application</CardTitle>
                 <CardDescription>
-                  Personnalisez l'apparence de votre espace de travail. Choisissez parmi nos thèmes prédéfinis.
+                  Personnalisez l'apparence de votre espace de travail. Choisissez le mode et la couleur.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-6">
+                <div className="space-y-3">
+                  <Label>Mode d'affichage</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Button
+                      type="button"
+                      variant={mode === 'dark' ? 'default' : 'outline'}
+                      className="justify-start gap-2"
+                      onClick={() => setMode('dark')}
+                    >
+                      <Moon className="h-4 w-4" />
+                      Mode sombre
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={mode === 'light' ? 'default' : 'outline'}
+                      className="justify-start gap-2"
+                      onClick={() => setMode('light')}
+                    >
+                      <Sun className="h-4 w-4" />
+                      Mode clair
+                    </Button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                   {themes.map((t) => (
                     <div
@@ -681,8 +936,214 @@ export default function SettingsPage() {
                 <CardTitle>Sécurité</CardTitle>
                 <CardDescription>Gérez les accès et les permissions</CardDescription>
               </CardHeader>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                Bientôt disponible
+              <CardContent className="space-y-4">
+                {!securityUnlocked ? (
+                  <div className="max-w-md space-y-3">
+                    <div className="text-sm text-muted-foreground">
+                      Cette section est protégée par mot de passe.
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="security_code">Mot de passe</Label>
+                      <Input
+                        id="security_code"
+                        type="password"
+                        value={securityCode}
+                        onChange={(e) => {
+                          setSecurityCode(e.target.value);
+                          setSecurityCodeError(null);
+                        }}
+                        placeholder="Entrer le mot de passe"
+                      />
+                      {securityCodeError && (
+                        <div className="text-sm text-destructive">{securityCodeError}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (securityCode.trim() !== expectedSecurityCode) {
+                            setSecurityCodeError('Mot de passe incorrect.');
+                            return;
+                          }
+                          sessionStorage.setItem('security_unlock', '1');
+                          setSecurityUnlocked(true);
+                          setSecurityCode('');
+                          setSecurityCodeError(null);
+                        }}
+                      >
+                        Déverrouiller
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setSecurityCode('');
+                          setSecurityCodeError(null);
+                        }}
+                      >
+                        Effacer
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          sessionStorage.removeItem('security_unlock');
+                          setSecurityUnlocked(false);
+                          setSecurityCode('');
+                          setSecurityCodeError(null);
+                        }}
+                      >
+                        Verrouiller
+                      </Button>
+                    </div>
+                    <div className="rounded-lg border p-4 space-y-4">
+                      <div>
+                        <h3 className="font-semibold">Compte GPS Tracking</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Configurez les identifiants GPS utilisés par les services de suivi.
+                        </p>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Société active: {currentCompanyId} • Source actuelle: {gpsSource === 'company' ? 'Société' : gpsSource === 'global' ? 'Globale' : 'Variables environnement'}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-2 rounded-full px-2.5 py-1 border',
+                            gpsTestStatus === 'success' && 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30',
+                            gpsTestStatus === 'error' && 'bg-red-500/10 text-red-600 border-red-500/30',
+                            gpsTestStatus === 'idle' && 'bg-muted text-muted-foreground border-border'
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'h-2 w-2 rounded-full',
+                              gpsTestStatus === 'success' && 'bg-emerald-500',
+                              gpsTestStatus === 'error' && 'bg-red-500',
+                              gpsTestStatus === 'idle' && 'bg-muted-foreground'
+                            )}
+                          />
+                          {gpsTestStatus === 'success' ? 'Connexion OK' : gpsTestStatus === 'error' ? 'Connexion échouée' : 'Non testé'}
+                        </span>
+                        {gpsTestMessage && <span className="text-muted-foreground">{gpsTestMessage}</span>}
+                        {gpsLastTestedAt && (
+                          <span className="text-muted-foreground">
+                            Dernier test: {new Date(gpsLastTestedAt).toLocaleString('fr-FR')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2 md:col-span-2">
+                          <Label>Serveur GPS</Label>
+                          <Select
+                            value={selectedGpsServerKey}
+                            onValueChange={(value) => {
+                              const selectedServer = GPS_SERVER_OPTIONS.find((option) => option.key === value);
+                              if (!selectedServer) return;
+                              setGpsApiUrl(selectedServer.domain);
+                              setGpsTestStatus('idle');
+                              setGpsTestMessage('');
+                              setGpsTechnicalError('');
+                            }}
+                            disabled={isGpsLoading || isGpsSaving || isGpsTesting}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choisir S1 ou S2" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {GPS_SERVER_OPTIONS.map((option) => (
+                                <SelectItem key={option.key} value={option.key}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="gps_email">Email</Label>
+                          <Input
+                            id="gps_email"
+                            type="email"
+                            placeholder="email@domaine.com"
+                            value={gpsEmail}
+                            onChange={(e) => {
+                              setGpsEmail(e.target.value);
+                              setGpsTestStatus('idle');
+                              setGpsTestMessage('');
+                              setGpsTechnicalError('');
+                            }}
+                            disabled={isGpsLoading || isGpsSaving || isGpsTesting}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="gps_password">Password</Label>
+                          <div className="relative">
+                            <Input
+                              id="gps_password"
+                              type={showGpsPassword ? 'text' : 'password'}
+                              placeholder="Mot de passe GPS"
+                              value={gpsPassword}
+                              onChange={(e) => {
+                                setGpsPassword(e.target.value);
+                                setGpsTestStatus('idle');
+                                setGpsTestMessage('');
+                                setGpsTechnicalError('');
+                              }}
+                              disabled={isGpsLoading || isGpsSaving || isGpsTesting}
+                              className="pr-10"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-1 top-1 h-8 w-8"
+                              onClick={() => setShowGpsPassword((v) => !v)}
+                              disabled={isGpsLoading || isGpsSaving || isGpsTesting}
+                            >
+                              {showGpsPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button type="button" onClick={handleSaveGpsSettings} disabled={isGpsLoading || isGpsSaving || isGpsTesting}>
+                          {isGpsSaving ? 'Enregistrement...' : 'Enregistrer'}
+                        </Button>
+                        <Button type="button" variant="outline" onClick={handleTestGpsConnection} disabled={isGpsLoading || isGpsSaving || isGpsTesting}>
+                          {isGpsTesting ? 'Test en cours...' : 'Tester la connexion'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={isGpsLoading || isGpsSaving || isGpsTesting}
+                          onClick={() => {
+                            setGpsApiUrl('');
+                            setGpsEmail('');
+                            setGpsPassword('');
+                            setGpsTestStatus('idle');
+                            setGpsTestMessage('');
+                            setGpsLastTestedAt(null);
+                            setGpsTechnicalError('');
+                          }}
+                        >
+                          Effacer
+                        </Button>
+                      </div>
+                      {gpsTechnicalError && (
+                        <div className="rounded-md border border-border bg-muted/30 p-3">
+                          <div className="text-xs font-medium mb-2">Détails techniques</div>
+                          <pre className="text-xs whitespace-pre-wrap break-all text-muted-foreground">{gpsTechnicalError}</pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

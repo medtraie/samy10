@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { TOURISM_COMPANY_ID, useTourismCompanyProfile } from "@/hooks/useTourismCompany";
+import { useAuth } from "@/hooks/useAuth";
 
 export interface GPSwoxVehicle {
   id: string;
@@ -64,8 +66,10 @@ interface GPSwoxResponse {
   error?: string;
 }
 
-async function fetchGPSwoxData(): Promise<GPSwoxResponse> {
-  const { data, error } = await supabase.functions.invoke<GPSwoxResponse>("gpswox");
+async function fetchGPSwoxData(companyId: string): Promise<GPSwoxResponse> {
+  const { data, error } = await supabase.functions.invoke<GPSwoxResponse>("gpswox", {
+    body: { companyId },
+  });
 
   if (error) {
     console.error("Error fetching GPSwox data:", error);
@@ -80,12 +84,17 @@ async function fetchGPSwoxData(): Promise<GPSwoxResponse> {
 }
 
 export function useGPSwoxVehicles(refetchInterval = 30000) {
+  const { data: companyProfile } = useTourismCompanyProfile();
+  const { user } = useAuth();
+  const companyId = companyProfile?.id || TOURISM_COMPANY_ID;
+
   return useQuery({
-    queryKey: ["gpswox-vehicles"],
+    queryKey: ["gpswox-vehicles", companyId, user?.id || "anonymous"],
     queryFn: async () => {
-      const data = await fetchGPSwoxData();
+      const data = await fetchGPSwoxData(companyId);
       return data.vehicles;
     },
+    enabled: !!user,
     refetchInterval, // Auto-refresh every 30 seconds by default
     staleTime: 10000, // Consider data stale after 10 seconds
     retry: 3,
@@ -94,12 +103,17 @@ export function useGPSwoxVehicles(refetchInterval = 30000) {
 }
 
 export function useGPSwoxDrivers(refetchInterval = 30000) {
+  const { data: companyProfile } = useTourismCompanyProfile();
+  const { user } = useAuth();
+  const companyId = companyProfile?.id || TOURISM_COMPANY_ID;
+
   return useQuery({
-    queryKey: ["gpswox-drivers"],
+    queryKey: ["gpswox-drivers", companyId, user?.id || "anonymous"],
     queryFn: async () => {
-      const data = await fetchGPSwoxData();
+      const data = await fetchGPSwoxData(companyId);
       return data.drivers;
     },
+    enabled: !!user,
     refetchInterval,
     staleTime: 10000,
     retry: 3,
@@ -108,9 +122,14 @@ export function useGPSwoxDrivers(refetchInterval = 30000) {
 }
 
 export function useGPSwoxData(refetchInterval = 30000) {
+  const { data: companyProfile } = useTourismCompanyProfile();
+  const { user } = useAuth();
+  const companyId = companyProfile?.id || TOURISM_COMPANY_ID;
+
   return useQuery({
-    queryKey: ["gpswox-data"],
-    queryFn: fetchGPSwoxData,
+    queryKey: ["gpswox-data", companyId, user?.id || "anonymous"],
+    queryFn: async () => await fetchGPSwoxData(companyId),
+    enabled: !!user,
     refetchInterval,
     staleTime: 10000,
     retry: 3,

@@ -22,7 +22,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div
-      className={`min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 ${isRTL ? 'rtl' : 'ltr'}`}
+      className={`min-h-screen bg-background text-foreground ${isRTL ? 'rtl' : 'ltr'}`}
       dir={isRTL ? 'rtl' : 'ltr'}
     >
       <Sidebar

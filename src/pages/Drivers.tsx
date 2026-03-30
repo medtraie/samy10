@@ -406,7 +406,7 @@ export default function Drivers() {
             .map((mission) => ({
               at: `${mission.mission_date}T08:00:00`,
               type: 'mission' as const,
-              label: `Mission ${mission.departure_zone} → ${mission.arrival_zone}`,
+              label: `Mission ${mission.departure_zone} <-> ${mission.arrival_zone}`,
               status: mission.status === 'in_progress' ? 'on_mission' : 'available',
               vehicle: getVehicleLabel(mission.vehicle_id),
               source: 'Mission',
@@ -434,7 +434,7 @@ export default function Drivers() {
             .map((mission) => ({
               at: `${mission.start_date}T${mission.start_time || '08:00:00'}`,
               type: 'tourism' as const,
-              label: `Tourisme ${mission.reference} • ${mission.title}`,
+              label: `Tourisme ${mission.reference} | ${mission.title}`,
               status: mission.status === 'in_progress' ? 'on_mission' : 'available',
               vehicle: getVehicleLabel(mission.vehicle_id),
               source: 'Tourisme',
@@ -548,12 +548,46 @@ export default function Drivers() {
     const pageHeight = doc.internal.pageSize.getHeight();
     const generatedAt = formatDateTime(new Date().toISOString());
     const companyName = companyProfile?.company_name || 'Parc gps';
+    const currencyCandidate = typeof (companyProfile as any)?.currency === 'string' ? String((companyProfile as any).currency).toUpperCase() : 'MAD';
+    const currencyCode = /^[A-Z]{3}$/.test(currencyCandidate) ? currencyCandidate : 'MAD';
     const contactLine = [companyProfile?.contact_email, companyProfile?.contact_phone].filter(Boolean).join(' | ');
     const footerLine = [companyProfile?.address, companyProfile?.tax_info].filter(Boolean).join(' | ');
     const statusLabelByKey: Record<string, string> = {
       unpaid: 'Non payé',
       paid: 'Payé',
       contested: 'Contesté',
+    };
+    const formatMoney = (amount: number) =>
+      new Intl.NumberFormat('fr-MA', {
+        style: 'currency',
+        currency: currencyCode,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(amount || 0);
+    const sanitizePdfText = (value: string) =>
+      (value || '')
+        .replace(/[•●▪◆◦]/g, ' | ')
+        .replace(/[→➜➡]/g, ' -> ')
+        .replace(/[↔⟷]/g, ' <-> ')
+        .replace(/[^\x20-\x7E\u00A0-\u00FF]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const addMovementTag = (text: string, type: DriverTimelineRow['type']) =>
+      type === 'mission' || type === 'voyage' || type === 'tourism' ? `TXN ${text}` : text;
+    const drawGradientHeader = () => {
+      const y = 0;
+      const height = 38;
+      const steps = 72;
+      const from: [number, number, number] = [4, 16, 47];
+      const to: [number, number, number] = [3, 105, 161];
+      for (let i = 0; i < steps; i += 1) {
+        const ratio = i / (steps - 1);
+        const r = Math.round(from[0] + (to[0] - from[0]) * ratio);
+        const g = Math.round(from[1] + (to[1] - from[1]) * ratio);
+        const b = Math.round(from[2] + (to[2] - from[2]) * ratio);
+        doc.setFillColor(r, g, b);
+        doc.rect((i * pageWidth) / steps, y, pageWidth / steps + 0.6, height, 'F');
+      }
     };
 
     const loadCompanyLogoDataUrl = async () => {
@@ -579,8 +613,7 @@ export default function Drivers() {
 
     const logoDataUrl = await loadCompanyLogoDataUrl();
 
-    doc.setFillColor(6, 18, 40);
-    doc.rect(0, 0, pageWidth, 36, 'F');
+    drawGradientHeader();
     doc.setFillColor(255, 255, 255);
     doc.roundedRect(14, 7, 24, 22, 2, 2, 'F');
     if (logoDataUrl) {
@@ -607,13 +640,13 @@ export default function Drivers() {
     doc.text('Historique Chauffeur', 44, 15);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(11);
-    doc.text(companyName, 44, 23);
+    doc.text(sanitizePdfText(companyName), 44, 23);
     doc.setFontSize(10);
-    doc.text(`${historyDialogDriver.name} • ${historyDialogDriver.vehiclePlate || '-'}`, 44, 30);
+    doc.text(`DRV ${sanitizePdfText(historyDialogDriver.name)}`, 44, 30);
     doc.setFontSize(9.5);
     doc.text(`Fenêtre: ${historyWindowDays} jours`, pageWidth - 14, 16, { align: 'right' });
     doc.text(`Généré: ${generatedAt}`, pageWidth - 14, 23, { align: 'right' });
-    doc.text(`Source: Parc Drivers`, pageWidth - 14, 30, { align: 'right' });
+    doc.text(`Véhicule: ${sanitizePdfText(historyDialogDriver.vehiclePlate || 'N/A')}`, pageWidth - 14, 30, { align: 'right' });
 
     const cardWidth = (pageWidth - 28 - 8) / 3;
     const cardHeight = 16;
@@ -622,7 +655,7 @@ export default function Drivers() {
       { title: 'Disponible', value: `${historyStats.disponibleDays} j`, subtitle: 'Jours', color: [5, 150, 105] as [number, number, number] },
       { title: 'Activité', value: `${historyStats.missionDays} j`, subtitle: 'Jours', color: [3, 105, 161] as [number, number, number] },
       { title: 'Infractions', value: `${infractionStats.totalInRange}`, subtitle: `${infractionStats.unpaidInRange} non payées`, color: [180, 83, 9] as [number, number, number] },
-      { title: 'Montant', value: infractionStats.amountInRange.toFixed(2), subtitle: 'Total période', color: [30, 64, 175] as [number, number, number] },
+      { title: 'Montant', value: formatMoney(infractionStats.amountInRange), subtitle: currencyCode, color: [30, 64, 175] as [number, number, number] },
       { title: 'Points', value: `${infractionStats.pointsInRange}`, subtitle: 'Déduits', color: [153, 27, 27] as [number, number, number] },
     ];
 
@@ -659,7 +692,12 @@ export default function Drivers() {
     autoTable(doc, {
       startY: cursorY + 2,
       head: [['Date & heure', 'Événement', 'Véhicule', 'Source']],
-      body: historyTimeline.slice(0, 200).map((row) => [formatDateTime(row.at), row.label, row.vehicle, row.source]),
+      body: historyTimeline.slice(0, 200).map((row) => [
+        formatDateTime(row.at),
+        sanitizePdfText(addMovementTag(row.label, row.type)),
+        sanitizePdfText(row.vehicle || 'N/A'),
+        sanitizePdfText(row.source),
+      ]),
       theme: 'grid',
       margin: { left: 14, right: 14, bottom: 22 },
       headStyles: { fillColor: [6, 18, 40], textColor: 255, fontStyle: 'bold' },
@@ -695,11 +733,11 @@ export default function Drivers() {
         driverInfractions.length > 0
           ? driverInfractions.slice(0, 200).map((infraction) => [
               formatDateOnly(infraction.infractionDate),
-              infraction.infractionType,
-              infraction.location || '-',
-              infraction.amount.toFixed(2),
+              sanitizePdfText(infraction.infractionType),
+              sanitizePdfText(infraction.location || '-'),
+              formatMoney(infraction.amount),
               infraction.pointsDeducted ?? '-',
-              statusLabelByKey[infraction.status || 'unpaid'] || infraction.status || 'Non payé',
+              sanitizePdfText(statusLabelByKey[infraction.status || 'unpaid'] || infraction.status || 'Non payé'),
             ])
           : [['-', 'Aucune infraction sur la période', '-', '-', '-', '-']],
       theme: 'grid',
@@ -721,6 +759,10 @@ export default function Drivers() {
     for (let i = 1; i <= totalPages; i += 1) {
       doc.setPage(i);
       const currentHeight = doc.internal.pageSize.getHeight();
+      doc.setTextColor(241, 245, 249);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(34);
+      doc.text(sanitizePdfText(companyName).toUpperCase(), pageWidth / 2, currentHeight / 2, { align: 'center' });
       doc.setDrawColor(226, 232, 240);
       doc.line(14, currentHeight - 17, pageWidth - 14, currentHeight - 17);
       doc.setTextColor(100, 116, 139);

@@ -58,7 +58,7 @@ interface WorkOrderFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workOrder?: WorkOrder;
-  onSubmit: (data: WorkOrderFormData) => void;
+  onSubmit: (data: WorkOrderFormData) => Promise<void> | void;
 }
 
 export function WorkOrderForm({ open, onOpenChange, workOrder, onSubmit }: WorkOrderFormProps) {
@@ -143,8 +143,8 @@ export function WorkOrderForm({ open, onOpenChange, workOrder, onSubmit }: WorkO
   const partsCost = parts.reduce((acc, p) => acc + (p.quantity * p.unitPrice), 0);
   const totalCost = laborCost + partsCost;
 
-  const handleSubmit = (data: WorkOrderFormData) => {
-    onSubmit(data);
+  const handleSubmit = async (data: WorkOrderFormData) => {
+    await onSubmit(data);
     form.reset();
     onOpenChange(false);
   };

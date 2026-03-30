@@ -25,7 +25,7 @@ export function Topbar() {
   };
 
   return (
-    <header className="h-16 border-b border-slate-200/70 bg-white/80 dark:bg-card/90 backdrop-blur-md flex items-center justify-between px-6">
+    <header className="h-16 border-b border-border bg-card/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-40">
       {/* Search */}
       <div className="flex-1 max-w-md">
         <div className="relative">
@@ -37,7 +37,7 @@ export function Topbar() {
             type="search"
             placeholder={t('common.search')}
             className={cn(
-              'w-full h-10 bg-white/60 dark:bg-muted/60 border border-slate-200/70 dark:border-border rounded-full text-sm shadow-[0_0_0_1px_rgba(148,163,184,0.15)] focus-visible:ring-1 focus-visible:ring-sky-500 focus-visible:border-sky-500 transition-colors',
+              'w-full h-10 bg-background/50 border border-input rounded-full text-sm focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary transition-colors',
               isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'
             )}
           />

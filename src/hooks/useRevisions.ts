@@ -4,7 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { GPSwoxVehicle, useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
 import { useMemo } from 'react';
 
-export type RevisionType = 'vidange' | 'vignette' | 'visite_technique' | 'autre_document';
+export type RevisionType = 'vidange' | 'vignette' | 'visite_technique' | 'assurance' | 'chaine_distribution' | 'adblue' | 'vidange_boite' | 'autre_document';
 export type RevisionMode = 'days' | 'km';
 
 export interface VehicleRevision {
@@ -17,12 +17,14 @@ export interface VehicleRevision {
   interval_km: number | null;
   last_date: string | null;
   last_km: number | null;
+  current_km: number | null;
+  reminder_km: number | null;
   next_due_date: string | null;
   next_due_km: number | null;
   status: 'pending' | 'due' | 'overdue' | 'completed';
   file_url: string | null;
   notes: string | null;
-  cost: number | null;
+  cost?: number | null;
   garage_name: string | null;
   invoice_number: string | null;
   recurrence_enabled: boolean;
@@ -50,8 +52,13 @@ function useCrudMutation<T>(
       queryKeys.forEach(k => queryClient.invalidateQueries({ queryKey: [k] }));
       toast({ title: successMsg });
     },
-    onError: () => {
-      toast({ title: errorMsg, variant: 'destructive' });
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : '';
+      toast({
+        title: errorMsg,
+        description: message || undefined,
+        variant: 'destructive',
+      });
     },
   });
 }
@@ -70,8 +77,12 @@ export function useRevisions() {
 export function useCreateRevision() {
   return useCrudMutation(['vehicle_revisions'], 'Révision créée', 'Erreur création',
     async (rev: Partial<VehicleRevision>) => {
+      console.log('Sending to supabase vehicle_revisions:', rev);
       const { data, error } = await supabase.from('vehicle_revisions').insert(rev as any).select().single();
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase vehicle_revisions insert error:', error);
+        throw new Error(error.message || error.details || 'Erreur inconnue Supabase');
+      }
       return data;
     });
 }
@@ -129,10 +140,11 @@ export function useComputedRevisions() {
         } else if (rev.mode === 'km' && rev.next_due_km && currentKm != null) {
           const remaining = rev.next_due_km - currentKm;
           remainingKm = remaining;
+          const reminderThreshold = rev.reminder_km ?? 200;
           status =
             remaining < 0
               ? 'overdue'
-              : remaining <= 200
+              : remaining <= reminderThreshold
               ? 'due'
               : 'pending';
         }

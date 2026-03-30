@@ -1,15 +1,24 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 export interface MaintenanceRecord {
   id: string;
   vehicle_id: string;
   maintenance_type: string;
+  work_order_type: 'preventive' | 'corrective' | 'inspection' | null;
+  priority: 'low' | 'medium' | 'high' | null;
   maintenance_date: string;
+  diagnosis: string | null;
+  garage: string | null;
+  labor_cost: number | null;
+  parts_cost: number | null;
+  parts: Array<{ name: string; quantity: number; unitPrice: number; stockItemId?: string | null }> | null;
   cost: number | null;
   notes: string | null;
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -17,10 +26,18 @@ export interface MaintenanceRecord {
 export interface MaintenanceInsert {
   vehicle_id: string;
   maintenance_type: string;
+  work_order_type?: 'preventive' | 'corrective' | 'inspection' | null;
+  priority?: 'low' | 'medium' | 'high' | null;
   maintenance_date: string;
+  diagnosis?: string | null;
+  garage?: string | null;
+  labor_cost?: number | null;
+  parts_cost?: number | null;
+  parts?: Array<{ name: string; quantity: number; unitPrice: number; stockItemId?: string | null }> | null;
   cost?: number | null;
   notes?: string | null;
   status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  completed_at?: string | null;
 }
 
 async function fetchMaintenance(): Promise<MaintenanceRecord[]> {
@@ -81,20 +98,23 @@ async function deleteMaintenance(id: string): Promise<void> {
 }
 
 export function useMaintenance() {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ['maintenance'],
+    queryKey: ['maintenance', user?.id || 'anonymous'],
     queryFn: fetchMaintenance,
+    enabled: !!user,
     staleTime: 30000,
   });
 }
 
 export function useCreateMaintenance() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: createMaintenance,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenance', user?.id || 'anonymous'] });
       toast({
         title: 'Succès',
         description: 'L\'ordre de travail a été créé',
@@ -112,11 +132,12 @@ export function useCreateMaintenance() {
 
 export function useUpdateMaintenance() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: updateMaintenance,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenance', user?.id || 'anonymous'] });
       toast({
         title: 'Succès',
         description: 'L\'ordre de travail a été mis à jour',
@@ -134,11 +155,12 @@ export function useUpdateMaintenance() {
 
 export function useDeleteMaintenance() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: deleteMaintenance,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenance', user?.id || 'anonymous'] });
       toast({
         title: 'Succès',
         description: 'L\'ordre de travail a été supprimé',

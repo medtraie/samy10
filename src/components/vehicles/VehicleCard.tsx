@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
 import { MapPin, MoreHorizontal, Gauge, User, Fuel, Battery, Truck, Car, Bus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +13,7 @@ import { GPSwoxVehicle } from '@/hooks/useGPSwoxVehicles';
 interface VehicleCardProps {
   vehicle: GPSwoxVehicle;
   compact?: boolean;
+  onDetails?: (vehicle: GPSwoxVehicle) => void;
 }
 
 const statusClasses = {
@@ -54,7 +56,8 @@ function formatTimeAgo(timestamp: string | undefined): string {
   return `Il y a ${diffDays}j`;
 }
 
-export function VehicleCard({ vehicle, compact = false }: VehicleCardProps) {
+export function VehicleCard({ vehicle, compact = false, onDetails }: VehicleCardProps) {
+  const navigate = useNavigate();
   const speed = vehicle.lastPosition?.speed || 0;
   const fuel = vehicle.fuelQuantity;
   const battery = vehicle.battery;
@@ -133,9 +136,37 @@ export function VehicleCard({ vehicle, compact = false }: VehicleCardProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>Détails</DropdownMenuItem>
-            <DropdownMenuItem>Voir sur la carte</DropdownMenuItem>
-            <DropdownMenuItem>Historique</DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                if (onDetails) {
+                  onDetails(vehicle);
+                  return;
+                }
+                navigate('/reports', {
+                  state: { vehicleId: String(vehicle.id), plate: vehicle.plate, tab: 'summary' },
+                });
+              }}
+            >
+              Détails
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                navigate('/live-map', {
+                  state: { vehicleId: String(vehicle.id) },
+                })
+              }
+            >
+              Voir sur la carte
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                navigate('/reports', {
+                  state: { vehicleId: String(vehicle.id), plate: vehicle.plate, tab: 'vehicles' },
+                })
+              }
+            >
+              Historique
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

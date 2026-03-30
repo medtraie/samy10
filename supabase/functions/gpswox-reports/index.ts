@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,8 +12,76 @@ interface LoginResponse {
   message?: string;
 }
 
-let cachedApiHash: string | null = null;
-let cacheExpiry: number = 0;
+// Cache for API hash to avoid repeated logins
+const apiHashCache = new Map<string, { hash: string; expiresAt: number }>();
+
+type GpsCredentials = {
+  apiUrl: string;
+  email: string;
+  password: string;
+  source: 'company' | 'global' | 'env';
+};
+
+function normalizeApiUrl(rawApiUrl: string) {
+  let apiUrl = rawApiUrl.trim();
+  if (!apiUrl.startsWith('http://') && !apiUrl.startsWith('https://')) {
+    apiUrl = 'http://' + apiUrl;
+  }
+  apiUrl = apiUrl.replace(/\/$/, '');
+  if (!apiUrl.endsWith('/api')) {
+    apiUrl = apiUrl + '/api';
+  }
+  return apiUrl;
+}
+
+async function getRequestUserId(req: Request, supabaseUrl: string, serviceRoleKey: string): Promise<string> {
+  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user?.id) {
+    throw new Error("Unauthorized");
+  }
+  return data.user.id;
+}
+
+async function loadGpsCredentials(userId: string, companyId?: string | null): Promise<GpsCredentials> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (supabaseUrl && serviceRoleKey) {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const keysToTry = [companyId ? `gpswox_credentials:${companyId}` : null, 'gpswox_credentials'].filter(Boolean) as string[];
+    for (const key of keysToTry) {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', key)
+        .eq('user_id', userId)
+        .maybeSingle();
+      const value = (data?.value || {}) as Record<string, unknown>;
+      const apiUrlFromDb = typeof value.apiUrl === 'string' ? value.apiUrl : typeof value.api_url === 'string' ? value.api_url : '';
+      const emailFromDb = typeof value.email === 'string' ? value.email : '';
+      const passwordFromDb = typeof value.password === 'string' ? value.password : '';
+      if (apiUrlFromDb && emailFromDb && passwordFromDb) {
+        return {
+          apiUrl: normalizeApiUrl(apiUrlFromDb),
+          email: emailFromDb,
+          password: passwordFromDb,
+          source: key.startsWith('gpswox_credentials:') ? 'company' : 'global',
+        };
+      }
+    }
+  }
+
+  throw new Error("GPSwox credentials not configured for this user");
+}
 
 async function fetchWithRetry(
   url: string,
@@ -39,18 +108,46 @@ async function fetchWithRetry(
 }
 
 async function getApiHash(apiUrl: string, email: string, password: string): Promise<string> {
-  if (cachedApiHash && Date.now() < cacheExpiry) return cachedApiHash;
-
-  const loginUrl = `${apiUrl}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
-  const response = await fetchWithRetry(loginUrl, { method: 'GET', headers: { 'Accept': 'application/json' } });
-  const data: LoginResponse = await response.json();
-
-  if (data.status !== 1 || !data.user_api_hash) {
-    throw new Error(data.message || "Login failed");
+  const cacheKey = `${apiUrl}|${email}|${password}`;
+  const cached = apiHashCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    console.log("Using cached API hash");
+    return cached.hash;
   }
 
-  cachedApiHash = data.user_api_hash;
-  cacheExpiry = Date.now() + (60 * 60 * 1000);
+  // Log email for debugging (masked)
+  const maskedEmail = email ? `${email.substring(0, 3)}***@${email.split('@')[1] || '???'}` : 'EMPTY';
+  console.log("Logging in to GPSwox API with email:", maskedEmail);
+  
+  const loginUrl = `${apiUrl}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
+  
+  const response = await fetchWithRetry(loginUrl, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+
+  const responseText = await response.text();
+  let data: LoginResponse;
+  try {
+    data = JSON.parse(responseText) as LoginResponse;
+  } catch {
+    throw new Error(`Login parse error (HTTP ${response.status}): ${responseText.slice(0, 400)}`);
+  }
+  console.log("Login response status:", data.status);
+
+  if (data.status !== 1 || !data.user_api_hash) {
+    throw new Error(
+      `Login failed (HTTP ${response.status}, API status ${data.status}): ${data.message || responseText.slice(0, 400)}`
+    );
+  }
+
+  apiHashCache.set(cacheKey, {
+    hash: data.user_api_hash,
+    expiresAt: Date.now() + (60 * 60 * 1000),
+  });
+
   return data.user_api_hash;
 }
 
@@ -411,45 +508,9 @@ serve(async (req) => {
   }
 
   try {
-    let apiUrl = Deno.env.get('GPSWOX_API_URL');
-    const email = Deno.env.get('GPSWOX_EMAIL');
-    const password = Deno.env.get('GPSWOX_PASSWORD');
-
-    if (!apiUrl || !email || !password) {
-      return new Response(
-        JSON.stringify({ error: "GPSwox credentials not configured" }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Ensure URL has protocol - use https if not specified
-    if (!apiUrl.startsWith('http://') && !apiUrl.startsWith('https://')) {
-      apiUrl = 'https://' + apiUrl;
-    }
+    let requestBody: Record<string, unknown> = {};
+    let companyId: string | null = null;
     
-    // Remove trailing slash if present
-    apiUrl = apiUrl.replace(/\/$/, '');
-    
-    // Ensure the URL ends with /api if it doesn't already
-    if (!apiUrl.endsWith('/api')) {
-      apiUrl = apiUrl + '/api';
-    }
-
-    console.log("Fetching reports data from GPSwox...");
-    let apiHash: string;
-    try {
-      apiHash = await getApiHash(apiUrl, email, password);
-    } catch (e) {
-      if (apiUrl.startsWith('https://')) {
-        const httpUrl = apiUrl.replace('https://', 'http://');
-        console.log("Retrying login over HTTP");
-        apiHash = await getApiHash(httpUrl, email, password);
-        apiUrl = httpUrl;
-      } else {
-        throw e;
-      }
-    }
-
     // Parse request params
     let reportType = 'summary';
     let deviceId: number | null = null;
@@ -461,8 +522,9 @@ serve(async (req) => {
       const url = new URL(req.url);
       if (url.searchParams.has('type')) reportType = url.searchParams.get('type') || 'summary';
       if (url.searchParams.has('device_id')) deviceId = parseInt(url.searchParams.get('device_id')!);
-    if (url.searchParams.has('date_from')) dateFrom = url.searchParams.get('date_from') || '';
-    if (url.searchParams.has('date_to')) dateTo = url.searchParams.get('date_to') || '';
+      if (url.searchParams.has('date_from')) dateFrom = url.searchParams.get('date_from') || '';
+      if (url.searchParams.has('date_to')) dateTo = url.searchParams.get('date_to') || '';
+      if (url.searchParams.has('companyId')) companyId = url.searchParams.get('companyId');
     } catch {}
 
     // If not found in URL and it's a POST, try parsing body
@@ -473,8 +535,41 @@ serve(async (req) => {
         if (body.device_id) deviceId = body.device_id;
         if (body.date_from) dateFrom = body.date_from;
         if (body.date_to) dateTo = body.date_to;
+        if (body.companyId) companyId = body.companyId;
       } catch (e) {
         // Body might be empty or not JSON, ignore
+      }
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error("Supabase environment is not configured");
+    }
+    const userId = await getRequestUserId(req, supabaseUrl, serviceRoleKey);
+    const credentials = await loadGpsCredentials(userId, companyId);
+    let apiUrl = credentials.apiUrl;
+    const email = credentials.email;
+    const password = credentials.password;
+
+    console.log("Using API URL:", apiUrl, "source:", credentials.source, "companyId:", companyId || "default");
+
+    let apiHash: string;
+    try {
+      apiHash = await getApiHash(apiUrl, email, password);
+    } catch (e) {
+      if (apiUrl.startsWith('http://')) {
+        const httpsUrl = apiUrl.replace('http://', 'https://');
+        console.log("Retrying login over HTTPS");
+        apiHash = await getApiHash(httpsUrl, email, password);
+        apiUrl = httpsUrl;
+      } else if (apiUrl.startsWith('https://')) {
+        const httpUrl = apiUrl.replace('https://', 'http://');
+        console.log("Retrying login over HTTP");
+        apiHash = await getApiHash(httpUrl, email, password);
+        apiUrl = httpUrl;
+      } else {
+        throw e;
       }
     }
 

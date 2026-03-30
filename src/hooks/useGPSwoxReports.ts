@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { TOURISM_COMPANY_ID, useTourismCompanyProfile } from "@/hooks/useTourismCompany";
+import { useAuth } from "@/hooks/useAuth";
 
 export interface FleetSummary {
   total_vehicles: number;
@@ -83,8 +85,10 @@ interface GPSwoxReportsResponse {
   error?: string;
 }
 
-async function fetchGPSwoxReports(): Promise<GPSwoxReportsResponse> {
-  const { data, error } = await supabase.functions.invoke<GPSwoxReportsResponse>("gpswox-reports");
+async function fetchGPSwoxReports(companyId: string): Promise<GPSwoxReportsResponse> {
+  const { data, error } = await supabase.functions.invoke<GPSwoxReportsResponse>("gpswox-reports", {
+    body: { companyId }
+  });
 
   if (error) {
     console.error("Error fetching GPSwox reports:", error);
@@ -99,9 +103,14 @@ async function fetchGPSwoxReports(): Promise<GPSwoxReportsResponse> {
 }
 
 export function useGPSwoxReports(refetchInterval = 60000) {
+  const { data: companyProfile } = useTourismCompanyProfile();
+  const { user } = useAuth();
+  const companyId = companyProfile?.id || TOURISM_COMPANY_ID;
+
   return useQuery({
-    queryKey: ["gpswox-reports"],
-    queryFn: fetchGPSwoxReports,
+    queryKey: ["gpswox-reports", companyId, user?.id || "anonymous"],
+    queryFn: async () => await fetchGPSwoxReports(companyId),
+    enabled: !!user,
     refetchInterval,
     staleTime: 30000,
     retry: 3,

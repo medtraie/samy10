@@ -87,7 +87,7 @@ export function useAppSettings() {
           key: 'module_activation', 
           value: newValue as any, 
           updated_at: new Date().toISOString() 
-        }, { onConflict: 'key' });
+        }, { onConflict: 'key,user_id' });
 
       if (error) throw error;
       return newValue;
@@ -137,7 +137,7 @@ export function useModulesUnlockCode() {
             value: value as any,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'key' }
+          { onConflict: 'key,user_id' }
         );
       if (error) throw error;
       return value;

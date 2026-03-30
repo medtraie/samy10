@@ -92,7 +92,7 @@ export function useUpsertTourismCompanyProfile() {
             updated_at: new Date().toISOString(),
             description: 'Profil société global',
           },
-          { onConflict: 'key' }
+          { onConflict: 'key,user_id' }
         );
 
       if (settingsError) throw settingsError;

@@ -12,18 +12,20 @@ import { useCreateRevision } from '@/hooks/useRevisions';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
 import { supabase } from '@/integrations/supabase/client';
 import { consumeInternalStock } from '@/services/stockService';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getStockItems } from '@/services/stockService';
 import { StockItem } from '@/types/stock';
 
 const formSchema = z.object({
   vehicle_plate: z.string().min(1, 'Véhicule requis'),
-  type: z.enum(['vidange', 'vignette', 'visite_technique', 'autre_document']),
+  type: z.enum(['vidange', 'vignette', 'visite_technique', 'assurance', 'chaine_distribution', 'adblue', 'vidange_boite', 'autre_document']),
   mode: z.enum(['days', 'km']),
   interval_days: z.number().optional(),
   interval_km: z.number().optional(),
   last_date: z.string().optional(),
   last_km: z.number().optional(),
+  current_km: z.number().optional(),
+  reminder_km: z.number().optional(),
   file_url: z.string().optional(),
   notes: z.string().optional(),
   cost: z.number().min(0).optional(),
@@ -58,6 +60,7 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
       mode: 'days',
       interval_days: 90,
       interval_km: 10000,
+      reminder_km: 200,
       notes: '',
       stock_items: [],
       cost: 0,
@@ -71,6 +74,29 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
     control: form.control,
     name: 'stock_items',
   });
+  const selectedVehiclePlate = form.watch('vehicle_plate');
+  const selectedMode = form.watch('mode');
+  const selectedType = form.watch('type');
+
+  const selectedVehicle = useMemo(
+    () => vehicles.find((vehicle) => vehicle.plate === selectedVehiclePlate),
+    [vehicles, selectedVehiclePlate]
+  );
+
+  // Handle Type -> Mode logic
+  useEffect(() => {
+    if (selectedType === 'visite_technique' || selectedType === 'assurance' || selectedType === 'vignette') {
+      if (selectedMode !== 'days') {
+        form.setValue('mode', 'days', { shouldValidate: true });
+        setModeTab('days');
+      }
+    } else if (selectedType === 'chaine_distribution' || selectedType === 'adblue' || selectedType === 'vidange_boite') {
+      if (selectedMode !== 'km') {
+        form.setValue('mode', 'km', { shouldValidate: true });
+        setModeTab('km');
+      }
+    }
+  }, [selectedType, selectedMode, form]);
 
   useEffect(() => {
     const loadInternalStock = async () => {
@@ -85,6 +111,17 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
 
     loadInternalStock();
   }, []);
+
+  useEffect(() => {
+    if (!selectedVehicle) return;
+    if (selectedMode !== 'km') return;
+    const mileage = Number(selectedVehicle.mileage || 0);
+    if (Number.isNaN(mileage)) return;
+    form.setValue('current_km', Math.max(0, Math.round(mileage)), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [selectedVehicle, selectedMode, form]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     let fileUrl = values.file_url || null;
@@ -109,8 +146,9 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
       const d = new Date(values.last_date);
       d.setDate(d.getDate() + values.interval_days);
       next_due_date = d.toISOString().slice(0, 10);
-    } else if (values.mode === 'km' && values.last_km && values.interval_km) {
-      next_due_km = values.last_km + values.interval_km;
+    } else if (values.mode === 'km' && values.interval_km) {
+      const baseKm = values.last_km ?? values.current_km ?? 0;
+      next_due_km = baseKm + values.interval_km;
     }
 
     const stockItems = values.stock_items || [];
@@ -126,6 +164,7 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
     }
 
     await createRevision.mutateAsync({
+      vehicle_id: selectedVehicle?.id ? String(selectedVehicle.id) : null,
       vehicle_plate: values.vehicle_plate,
       type: values.type,
       mode: values.mode,
@@ -133,6 +172,8 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
       interval_km: values.mode === 'km' ? (values.interval_km || null) : null,
       last_date: values.mode === 'days' ? (values.last_date || null) : null,
       last_km: values.mode === 'km' ? (values.last_km || null) : null,
+      current_km: values.mode === 'km' ? (values.current_km || null) : null,
+      reminder_km: values.mode === 'km' ? (values.reminder_km || null) : null,
       next_due_date,
       next_due_km,
       status: 'pending',
@@ -188,9 +229,13 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
                   </FormControl>
                   <SelectContent>
                     <SelectItem value="vidange">Vidange</SelectItem>
-                    <SelectItem value="vignette">Vignette</SelectItem>
                     <SelectItem value="visite_technique">Visite technique</SelectItem>
-                    <SelectItem value="autre_document">Autre document</SelectItem>
+                    <SelectItem value="assurance">Assurance</SelectItem>
+                    <SelectItem value="vignette">Vignette</SelectItem>
+                    <SelectItem value="chaine_distribution">Chaîne de distribution</SelectItem>
+                    <SelectItem value="adblue">Adblue</SelectItem>
+                    <SelectItem value="vidange_boite">Vidange boîte de vitesse</SelectItem>
+                    <SelectItem value="autre_document">Autre</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -202,14 +247,23 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
         <FormField
           control={form.control}
           name="mode"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Mode d'alerte</FormLabel>
-              <Tabs value={modeTab} onValueChange={(v) => { setModeTab(v as 'days' | 'km'); field.onChange(v); }}>
-                <TabsList className="grid grid-cols-2 w-full">
-                  <TabsTrigger value="days">Par jours</TabsTrigger>
-                  <TabsTrigger value="km">Par kilométrage</TabsTrigger>
-                </TabsList>
+          render={({ field }) => {
+            const isDaysOnly = selectedType === 'visite_technique' || selectedType === 'assurance' || selectedType === 'vignette';
+            const isKmOnly = selectedType === 'chaine_distribution' || selectedType === 'adblue' || selectedType === 'vidange_boite';
+
+            return (
+              <FormItem>
+                <FormLabel>Mode d'alerte</FormLabel>
+                <Tabs value={modeTab} onValueChange={(v) => { 
+                  if (isDaysOnly && v === 'km') return;
+                  if (isKmOnly && v === 'days') return;
+                  setModeTab(v as 'days' | 'km'); 
+                  field.onChange(v); 
+                }}>
+                  <TabsList className="grid grid-cols-2 w-full">
+                    <TabsTrigger value="days" disabled={isKmOnly}>Par jours</TabsTrigger>
+                    <TabsTrigger value="km" disabled={isDaysOnly}>Par kilométrage</TabsTrigger>
+                  </TabsList>
                 <TabsContent value="days">
                   <div className="grid grid-cols-2 gap-4 mt-3">
                     <FormField
@@ -242,37 +296,64 @@ export function RevisionForm({ onSuccess }: RevisionFormProps) {
                 </TabsContent>
                 <TabsContent value="km">
                   <div className="grid grid-cols-2 gap-4 mt-3">
-                    <FormField
-                      control={form.control}
-                      name="interval_km"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Intervalle (km)</FormLabel>
-                          <FormControl>
-                            <Input type="number" min={100} step={100} {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="last_km"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Kilométrage dernier entretien</FormLabel>
-                          <FormControl>
-                            <Input type="number" min={0} step={100} {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </FormItem>
-          )}
+                      <FormField
+                        control={form.control}
+                        name="last_km"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Kilométrage dernier entretien</FormLabel>
+                            <FormControl>
+                              <Input type="number" min={0} step={1} {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="current_km"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Kilométrage actuel</FormLabel>
+                            <FormControl>
+                              <Input type="number" min={0} step={1} {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="interval_km"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Intervalle (km)</FormLabel>
+                            <FormControl>
+                              <Input type="number" min={100} step={100} {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="reminder_km"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Créer un rappel lorsqu'il reste (km)</FormLabel>
+                            <FormControl>
+                              <Input type="number" min={0} step={10} {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </FormItem>
+            );
+          }}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

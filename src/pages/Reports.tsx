@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useGPSwoxReports } from '@/hooks/useGPSwoxReports';
 import { supabase } from "@/integrations/supabase/client";
@@ -49,6 +49,7 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useLocation } from 'react-router-dom';
 
 const statusConfig = {
   moving: { label: 'En mouvement', icon: Navigation, color: 'text-success', bg: 'bg-success/10' },
@@ -142,6 +143,18 @@ export default function Reports() {
   const [overspeedSeverityFilter, setOverspeedSeverityFilter] = useState('all');
   const [stopDurationFilter, setStopDurationFilter] = useState('all');
   const [fuelLevelFilter, setFuelLevelFilter] = useState('all');
+  const location = useLocation();
+
+  useEffect(() => {
+    const state = location.state as { tab?: string; plate?: string } | null;
+    if (!state) return;
+    if (state.tab && ['summary', 'vehicles', 'overspeeds', 'stops', 'fuel', 'exports'].includes(state.tab)) {
+      setActiveTab(state.tab);
+    }
+    if (state.plate) {
+      setSearch(state.plate);
+    }
+  }, [location.state]);
   
   // Daily Report State
   const [dateFrom, setDateFrom] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);

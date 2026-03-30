@@ -15,6 +15,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
 import { cn } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 export default function Vehicles() {
   const { i18n } = useTranslation();
@@ -26,6 +32,7 @@ export default function Vehicles() {
   const [batteryFilter, setBatteryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('mileage');
   const [searchQuery, setSearchQuery] = useState('');
+  const [detailsVehicleId, setDetailsVehicleId] = useState<string | null>(null);
 
   const { data: vehicles = [], isLoading, isError, error, refetch, isFetching } = useGPSwoxVehicles(30000);
 
@@ -68,6 +75,11 @@ export default function Vehicles() {
     });
     return list;
   }, [filteredVehicles, sortBy]);
+
+  const detailsVehicle = useMemo(
+    () => sortedVehicles.find((vehicle) => String(vehicle.id) === detailsVehicleId) || null,
+    [detailsVehicleId, sortedVehicles]
+  );
 
   // Stats
   const totalVehicles = vehicles.length;
@@ -344,13 +356,13 @@ export default function Vehicles() {
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in duration-300">
                 {sortedVehicles.map((vehicle) => (
-                  <VehicleCard key={vehicle.id} vehicle={vehicle} />
+                  <VehicleCard key={vehicle.id} vehicle={vehicle} onDetails={(v) => setDetailsVehicleId(String(v.id))} />
                 ))}
               </div>
             ) : (
               <div className="space-y-2 animate-in fade-in duration-300">
                 {sortedVehicles.map((vehicle) => (
-                  <VehicleCard key={vehicle.id} vehicle={vehicle} compact />
+                  <VehicleCard key={vehicle.id} vehicle={vehicle} compact onDetails={(v) => setDetailsVehicleId(String(v.id))} />
                 ))}
               </div>
             )}
@@ -372,6 +384,77 @@ export default function Vehicles() {
           </>
         )}
       </div>
+      <Dialog open={!!detailsVehicle} onOpenChange={(open) => !open && setDetailsVehicleId(null)}>
+        <DialogContent className="sm:max-w-[760px]">
+          <DialogHeader>
+            <DialogTitle>Détails véhicule {detailsVehicle?.plate || ''}</DialogTitle>
+          </DialogHeader>
+          {detailsVehicle && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Plaque</p>
+                <p className="font-medium">{detailsVehicle.plate}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Marque / Modèle</p>
+                <p className="font-medium">{detailsVehicle.brand} {detailsVehicle.model}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Statut</p>
+                <p className="font-medium">{detailsVehicle.status}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Connexion</p>
+                <p className="font-medium">{detailsVehicle.online}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Chauffeur</p>
+                <p className="font-medium">{detailsVehicle.driver || detailsVehicle.driverDetails?.name || '-'}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">IMEI</p>
+                <p className="font-medium">{detailsVehicle.imei}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Kilométrage</p>
+                <p className="font-medium">{detailsVehicle.mileage.toLocaleString()} km</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Distance aujourd&apos;hui</p>
+                <p className="font-medium">{detailsVehicle.distanceToday?.toLocaleString() || '0'} km</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Carburant</p>
+                <p className="font-medium">{detailsVehicle.fuelQuantity !== null ? `${detailsVehicle.fuelQuantity}%` : '-'}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Batterie</p>
+                <p className="font-medium">{detailsVehicle.battery !== null ? `${detailsVehicle.battery}%` : '-'}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Network / Protocol</p>
+                <p className="font-medium">{detailsVehicle.network ?? '-'} / {detailsVehicle.protocol || '-'}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-muted-foreground">Dernière position</p>
+                <p className="font-medium">
+                  {detailsVehicle.lastPosition
+                    ? `${detailsVehicle.lastPosition.city} (${detailsVehicle.lastPosition.lat.toFixed(5)}, ${detailsVehicle.lastPosition.lng.toFixed(5)})`
+                    : '-'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border p-3 md:col-span-2">
+                <p className="text-muted-foreground">Dernière mise à jour</p>
+                <p className="font-medium">
+                  {detailsVehicle.lastPosition?.timestamp
+                    ? new Date(detailsVehicle.lastPosition.timestamp).toLocaleString('fr-FR')
+                    : '-'}
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
