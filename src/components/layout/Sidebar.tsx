@@ -49,6 +49,7 @@ const navItems = [
   { key: 'transportTouristique', icon: Palmtree, path: '/transport-touristique', module: 'transport_touristique' },
   { key: 'transportVoyageurs', icon: Bus, path: '/transport-voyageurs', module: 'transport_voyageurs' },
   { key: 'transportTMS', icon: PackageCheck, path: '/transport-tms', module: 'transport_tms' },
+  { key: 'transportBTP', icon: Truck, path: '/transport-btp', module: 'transport_btp' },
   { key: 'missions', icon: Package, path: '/missions', module: 'missions' },
   { key: 'stock', icon: Boxes, path: '/stock', module: 'stock' },
   { key: 'fuel', icon: Fuel, path: '/fuel', module: 'fuel' },
