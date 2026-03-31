@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { Plus, Route } from 'lucide-react';
 import { useCreateTrajet, useChantiers, useCreateChantier, type Trajet } from '@/hooks/useTransportBTP';
 import { useGPSwoxGeofences } from '@/hooks/useGPSwoxGeofences';
@@ -111,7 +111,6 @@ export function TrajetForm({ onSuccess }: TrajetFormProps) {
   const chantierNames = chantiers
     .filter((chantier) => !geofenceNameSet.has(chantier.name.toLowerCase()))
     .map((chantier) => chantier.name);
-  const locationOptions = [...geofenceNames, ...chantierNames];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -160,11 +159,26 @@ export function TrajetForm({ onSuccess }: TrajetFormProps) {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="none">Aucun</SelectItem>
-                        {locationOptions.map((name) => (
-                          <SelectItem key={name} value={name}>
-                            {name}
-                          </SelectItem>
-                        ))}
+                        {geofenceNames.length > 0 && (
+                          <SelectGroup>
+                            <SelectLabel className="text-primary font-bold">Zones GPSwox</SelectLabel>
+                            {geofenceNames.map((name) => (
+                              <SelectItem key={`geo-${name}`} value={name}>
+                                {name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
+                        {chantierNames.length > 0 && (
+                          <SelectGroup>
+                            <SelectLabel className="text-slate-500 font-bold">Chantiers Locaux</SelectLabel>
+                            {chantierNames.map((name) => (
+                              <SelectItem key={`local-${name}`} value={name}>
+                                {name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -186,11 +200,26 @@ export function TrajetForm({ onSuccess }: TrajetFormProps) {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="none">Aucun</SelectItem>
-                        {locationOptions.map((name) => (
-                          <SelectItem key={name} value={name}>
-                            {name}
-                          </SelectItem>
-                        ))}
+                        {geofenceNames.length > 0 && (
+                          <SelectGroup>
+                            <SelectLabel className="text-primary font-bold">Zones GPSwox</SelectLabel>
+                            {geofenceNames.map((name) => (
+                              <SelectItem key={`geo-${name}`} value={name}>
+                                {name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
+                        {chantierNames.length > 0 && (
+                          <SelectGroup>
+                            <SelectLabel className="text-slate-500 font-bold">Chantiers Locaux</SelectLabel>
+                            {chantierNames.map((name) => (
+                              <SelectItem key={`local-${name}`} value={name}>
+                                {name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />

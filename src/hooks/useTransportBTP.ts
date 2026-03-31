@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import type { GPSwoxGeofence } from '@/hooks/useGPSwoxGeofences';
 
 // Types
 export interface Chantier {
@@ -166,6 +167,100 @@ export function useDeleteChantier() {
     },
     onError: () => {
       toast({ title: 'Erreur lors de la suppression', variant: 'destructive' });
+    },
+  });
+}
+
+export function useSyncGeofencesToChantiers() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (geofences: GPSwoxGeofence[]) => {
+      if (!geofences.length) {
+        return { created: 0, updated: 0, total: 0 };
+      }
+
+      const { data: existingChantiers, error: fetchError } = await supabase
+        .from('chantiers')
+        .select('id, name, status, type, notes');
+      if (fetchError) throw fetchError;
+
+      const chantierByName = new Map(
+        ((existingChantiers || []) as Array<Pick<Chantier, 'id' | 'name' | 'status' | 'type' | 'notes'>>).map((chantier) => [
+          chantier.name.trim().toLowerCase(),
+          chantier,
+        ]),
+      );
+
+      let created = 0;
+      let updated = 0;
+      const noteSource = 'source:gpswox';
+
+      for (const geofence of geofences) {
+        const normalized = geofence.name.trim().toLowerCase();
+        if (!normalized) continue;
+        const existing = chantierByName.get(normalized);
+        const nextStatus = geofence.active ? 'active' : 'inactive';
+
+        if (!existing) {
+          const { data: inserted, error: insertError } = await supabase
+            .from('chantiers')
+            .insert({
+              name: geofence.name.trim(),
+              type: 'chantier',
+              status: nextStatus,
+              notes: noteSource,
+            })
+            .select('id, name, status, type, notes')
+            .single();
+          if (insertError) throw insertError;
+          created += 1;
+          if (inserted) {
+            chantierByName.set(normalized, inserted as Pick<Chantier, 'id' | 'name' | 'status' | 'type' | 'notes'>);
+          }
+          continue;
+        }
+
+        const needsStatusUpdate = existing.status !== nextStatus;
+        const needsTypeUpdate = existing.type !== 'chantier';
+        const hasSourceTag = (existing.notes || '').toLowerCase().includes(noteSource);
+        const nextNotes = hasSourceTag
+          ? existing.notes
+          : existing.notes
+            ? `${existing.notes}\n${noteSource}`
+            : noteSource;
+        const needsNotesUpdate = nextNotes !== existing.notes;
+
+        if (needsStatusUpdate || needsTypeUpdate || needsNotesUpdate) {
+          const { error: updateError } = await supabase
+            .from('chantiers')
+            .update({
+              status: nextStatus,
+              type: 'chantier',
+              notes: nextNotes,
+            })
+            .eq('id', existing.id);
+          if (updateError) throw updateError;
+          updated += 1;
+        }
+      }
+
+      return { created, updated, total: geofences.length };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['chantiers'] });
+      queryClient.invalidateQueries({ queryKey: ['trajets'] });
+      toast({
+        title: 'Synchronisation GPSwox réussie',
+        description: `${result.created} créé(s), ${result.updated} mis à jour`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Erreur de synchronisation GPSwox',
+        variant: 'destructive',
+      });
     },
   });
 }

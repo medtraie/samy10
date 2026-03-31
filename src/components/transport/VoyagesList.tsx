@@ -90,18 +90,18 @@ export function VoyagesList() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="dashboard-panel">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
               <Calendar className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Aujourd'hui</p>
+              <p className="text-sm text-muted-foreground">Aujourd&apos;hui</p>
               <p className="text-2xl font-bold">{todayVoyages} voyages</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="dashboard-panel">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="w-12 h-12 rounded-lg bg-info/10 flex items-center justify-center">
               <Weight className="w-6 h-6 text-info" />
@@ -112,7 +112,7 @@ export function VoyagesList() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="dashboard-panel">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="w-12 h-12 rounded-lg bg-success/10 flex items-center justify-center">
               <TruckIcon className="w-6 h-6 text-success" />
@@ -126,7 +126,7 @@ export function VoyagesList() {
       </div>
 
       {voyages.length === 0 ? (
-        <Card>
+        <Card className="dashboard-panel">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <TruckIcon className="w-12 h-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">Aucun voyage enregistré</p>
@@ -134,8 +134,8 @@ export function VoyagesList() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
+        <Card className="dashboard-panel">
+          <CardContent className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
