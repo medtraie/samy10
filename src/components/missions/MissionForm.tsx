@@ -113,6 +113,14 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
   // Fetch geofences from GPSwox
   const { data: geofences = [], isLoading: geofencesLoading } = useGPSwoxGeofences();
   const { data: clients = [], isLoading: clientsLoading } = useTMSClients();
+  const geofenceOptions = geofences
+    .filter((geofence) => typeof geofence.name === 'string' && geofence.name.trim().length > 0)
+    .map((geofence) => ({ ...geofence, name: geofence.name.trim() }));
+  const clientOptions = clients
+    .filter((client) => typeof client.name === 'string' && client.name.trim().length > 0)
+    .map((client) => ({ ...client, name: client.name.trim() }));
+  const vehicleOptions = gpswoxVehicles.filter((vehicle) => String(vehicle.id ?? '').trim().length > 0);
+  const driverOptions = availableDrivers.filter((driver) => typeof driver.id === 'string' && driver.id.trim().length > 0);
 
   const cashAmount = form.watch('cashAmount');
   const extraFees = form.watch('extraFees');
@@ -157,7 +165,7 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {clients.map((client) => (
+                      {clientOptions.map((client) => (
                         <SelectItem key={client.id} value={client.name}>
                           {client.name}
                         </SelectItem>
@@ -201,7 +209,7 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {geofences.map((geofence) => (
+                        {geofenceOptions.map((geofence) => (
                           <SelectItem key={geofence.id} value={geofence.name}>
                             <div className="flex items-center gap-2">
                               <div 
@@ -212,7 +220,7 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                             </div>
                           </SelectItem>
                         ))}
-                        {!geofencesLoading && geofences.length === 0 && (
+                        {!geofencesLoading && geofenceOptions.length === 0 && (
                           <div className="px-2 py-1.5 text-sm text-muted-foreground">
                             Aucune géo-clôture disponible
                           </div>
@@ -246,7 +254,7 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {geofences.map((geofence) => (
+                        {geofenceOptions.map((geofence) => (
                           <SelectItem key={geofence.id} value={geofence.name}>
                             <div className="flex items-center gap-2">
                               <div 
@@ -257,7 +265,7 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                             </div>
                           </SelectItem>
                         ))}
-                        {!geofencesLoading && geofences.length === 0 && (
+                        {!geofencesLoading && geofenceOptions.length === 0 && (
                           <div className="px-2 py-1.5 text-sm text-muted-foreground">
                             Aucune géo-clôture disponible
                           </div>
@@ -333,12 +341,12 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {gpswoxVehicles.map((vehicle) => (
+                        {vehicleOptions.map((vehicle) => (
                           <SelectItem key={vehicle.id} value={String(vehicle.id)}>
                             {vehicle.plate} - {vehicle.brand} {vehicle.model}
                           </SelectItem>
                         ))}
-                        {!vehiclesLoading && gpswoxVehicles.length === 0 && (
+                        {!vehiclesLoading && vehicleOptions.length === 0 && (
                           <div className="px-2 py-1.5 text-sm text-muted-foreground">
                             Aucun véhicule disponible
                           </div>
@@ -369,12 +377,12 @@ export function MissionForm({ open, onOpenChange, mission, onSubmit }: MissionFo
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {availableDrivers.map((driver) => (
+                        {driverOptions.map((driver) => (
                           <SelectItem key={driver.id} value={driver.id}>
                             {driver.name} - Permis {driver.license_type}
                           </SelectItem>
                         ))}
-                        {!driversLoading && availableDrivers.length === 0 && (
+                        {!driversLoading && driverOptions.length === 0 && (
                           <div className="px-2 py-1.5 text-sm text-muted-foreground">
                             Aucun chauffeur disponible
                           </div>

@@ -29,10 +29,18 @@ export function MissionCostPanel({ missions }: MissionCostPanelProps) {
   const { data: gpswoxVehicles = [] } = useGPSwoxVehicles();
 
   const driverIds = Array.from(
-    new Set(missions.map((m) => m.driver_id).filter((id): id is string => !!id)),
+    new Set(
+      missions
+        .map((m) => m.driver_id)
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+    ),
   );
   const vehicleIds = Array.from(
-    new Set(missions.map((m) => m.vehicle_id).filter((id): id is string => !!id)),
+    new Set(
+      missions
+        .map((m) => m.vehicle_id)
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+    ),
   );
 
   const filteredAll = missions.filter((m) => {
