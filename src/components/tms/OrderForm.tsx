@@ -36,6 +36,12 @@ export function OrderForm() {
   const { data: drivers = [] } = useDrivers();
   const { data: vehicles = [] } = useGPSwoxVehicles();
   const { data: geofences = [] } = useGPSwoxGeofences();
+  const clientOptions = clients.filter((client) => typeof client.id === 'string' && client.id.trim().length > 0);
+  const vehicleOptions = vehicles.filter((vehicle) => String(vehicle.id ?? '').trim().length > 0);
+  const driverOptions = drivers.filter((driver) => typeof driver.id === 'string' && driver.id.trim().length > 0);
+  const geofenceOptions = geofences.filter(
+    (geofence) => typeof geofence.name === 'string' && geofence.name.trim().length > 0,
+  );
   const { register, handleSubmit, reset, setValue, watch } = useForm<FormData>({
     defaultValues: { order_number: `OT-${Date.now().toString(36).toUpperCase()}` }
   });
@@ -95,7 +101,7 @@ export function OrderForm() {
                 <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Aucun</SelectItem>
-                  {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -107,7 +113,7 @@ export function OrderForm() {
                 <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Aucun</SelectItem>
-                  {vehicles.map(v => <SelectItem key={v.id} value={String(v.id)}>{v.plate} - {v.brand} {v.model}</SelectItem>)}
+                  {vehicleOptions.map(v => <SelectItem key={v.id} value={String(v.id)}>{v.plate} - {v.brand} {v.model}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -117,7 +123,7 @@ export function OrderForm() {
                 <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Aucun</SelectItem>
-                  {drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                  {driverOptions.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -128,11 +134,11 @@ export function OrderForm() {
               <Select onValueChange={(v) => setValue('pickup_address', v)}>
                 <SelectTrigger><SelectValue placeholder="Sélectionner une zone" /></SelectTrigger>
                 <SelectContent>
-                  {geofences.map(g => (
-                    <SelectItem key={g.id} value={g.name}>
+                  {geofenceOptions.map(g => (
+                    <SelectItem key={g.id} value={g.name.trim()}>
                       <span className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: g.color }} />
-                        {g.name}
+                        {g.name.trim()}
                       </span>
                     </SelectItem>
                   ))}
@@ -144,11 +150,11 @@ export function OrderForm() {
               <Select onValueChange={(v) => setValue('delivery_address', v)}>
                 <SelectTrigger><SelectValue placeholder="Sélectionner une zone" /></SelectTrigger>
                 <SelectContent>
-                  {geofences.map(g => (
-                    <SelectItem key={g.id} value={g.name}>
+                  {geofenceOptions.map(g => (
+                    <SelectItem key={g.id} value={g.name.trim()}>
                       <span className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: g.color }} />
-                        {g.name}
+                        {g.name.trim()}
                       </span>
                     </SelectItem>
                   ))}

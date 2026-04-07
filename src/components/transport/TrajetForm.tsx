@@ -56,7 +56,11 @@ export function TrajetForm({ onSuccess }: TrajetFormProps) {
 
   const onSubmit = async (values: TrajetFormValues) => {
     try {
-      const chantierByName = new Map(chantiers.map((chantier) => [chantier.name.toLowerCase(), chantier]));
+      const chantierByName = new Map(
+        chantiers
+          .filter((chantier) => typeof chantier.name === 'string' && chantier.name.trim().length > 0)
+          .map((chantier) => [chantier.name.trim().toLowerCase(), chantier]),
+      );
 
       const ensureChantierId = async (name?: string) => {
         if (!name || name === 'none') return null;
@@ -106,11 +110,22 @@ export function TrajetForm({ onSuccess }: TrajetFormProps) {
     }
   };
 
-  const geofenceNames = geofences.map((geofence) => geofence.name);
+  const geofenceNames = Array.from(
+    new Set(
+      geofences
+        .map((geofence) => (typeof geofence.name === 'string' ? geofence.name.trim() : ''))
+        .filter((name) => name.length > 0),
+    ),
+  );
   const geofenceNameSet = new Set(geofenceNames.map((name) => name.toLowerCase()));
-  const chantierNames = chantiers
-    .filter((chantier) => !geofenceNameSet.has(chantier.name.toLowerCase()))
-    .map((chantier) => chantier.name);
+  const chantierNames = Array.from(
+    new Set(
+      chantiers
+        .map((chantier) => (typeof chantier.name === 'string' ? chantier.name.trim() : ''))
+        .filter((name) => name.length > 0)
+        .filter((name) => !geofenceNameSet.has(name.toLowerCase())),
+    ),
+  );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -151,7 +166,10 @@ export function TrajetForm({ onSuccess }: TrajetFormProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Origine</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                      value={field.value && field.value.trim().length > 0 ? field.value : 'none'}
+                      onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Sélectionner" />
@@ -192,7 +210,10 @@ export function TrajetForm({ onSuccess }: TrajetFormProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Destination</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                      value={field.value && field.value.trim().length > 0 ? field.value : 'none'}
+                      onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Sélectionner" />
