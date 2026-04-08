@@ -25,7 +25,7 @@ const filters: { key: VehicleFilter; label: string; icon: React.ElementType; col
   { key: 'all', label: 'Tous', icon: Square, color: 'text-foreground' },
   { key: 'online', label: 'En ligne', icon: Wifi, color: 'text-success' },
   { key: 'moving', label: 'En mouvement', icon: Navigation, color: 'text-primary' },
-  { key: 'stopped', label: 'À l\'arrêt', icon: Square, color: 'text-warning' },
+  { key: 'stopped', label: 'À l\'arrêt', icon: Square, color: 'text-destructive' },
 ];
 
 export const VehicleFilters: React.FC<VehicleFiltersProps> = ({

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Truck, Loader2, Layers } from 'lucide-react';
+import { Truck, Loader2, Layers, Home } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,7 @@ export default function LiveMap() {
   const [lastUpdateTime, setLastUpdateTime] = useState<Date>();
   const [mapLayer, setMapLayer] = useState<MapLayerType>('google-streets');
   const [traceurVehicleIds, setTraceurVehicleIds] = useState<Set<string>>(new Set());
+  const [resetViewSignal, setResetViewSignal] = useState(0);
   const location = useLocation();
 
   const { data: vehicles = [], isLoading, error, refetch, isFetching } = useGPSwoxVehicles(
@@ -128,6 +129,12 @@ export default function LiveMap() {
     setTraceurVehicleIds(new Set());
   }, []);
 
+  const handleResetMapView = useCallback(() => {
+    setFollowingVehicleId(undefined);
+    setSelectedVehicleId(undefined);
+    setResetViewSignal((prev) => prev + 1);
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="h-[calc(100vh-7rem)] flex gap-4" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -163,6 +170,7 @@ export default function LiveMap() {
             enableClustering={enableClustering}
             mapLayer={mapLayer}
             traceurVehicleIds={traceurVehicleIds}
+            resetViewSignal={resetViewSignal}
           />
 
           {/* Top Controls */}
@@ -212,6 +220,16 @@ export default function LiveMap() {
               onClearAll={handleClearAllTraceurs}
               isRTL={isRTL}
             />
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 bg-card/90 backdrop-blur shadow-lg"
+              onClick={handleResetMapView}
+            >
+              <Home className="w-4 h-4" />
+              <span className="text-xs">Vue globale</span>
+            </Button>
           </div>
 
           {/* Following indicator */}
@@ -246,7 +264,7 @@ export default function LiveMap() {
             </div>
             <div className="flex items-center gap-2 text-xs">
               <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#ef4444' }} />
-              <span className="text-muted-foreground">À l'arrêt</span>
+              <span className="text-destructive">À l'arrêt</span>
             </div>
             <div className="flex items-center gap-2 text-xs">
               <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#f97316' }} />

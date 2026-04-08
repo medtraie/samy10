@@ -28,6 +28,8 @@ const statusLabels = {
   maintenance: 'Maintenance',
 };
 
+const BATTERY_MAINTENANCE_THRESHOLD_V = 9;
+
 // Determine vehicle icon based on name/plate
 function getVehicleIcon(name: string) {
   const lowerName = name.toLowerCase();
@@ -61,6 +63,10 @@ export function VehicleCard({ vehicle, compact = false, onDetails }: VehicleCard
   const speed = vehicle.lastPosition?.speed || 0;
   const fuel = vehicle.fuelQuantity;
   const battery = vehicle.battery;
+  const batteryVolts = battery !== null ? Number(battery) : null;
+  const batteryIsLow = batteryVolts !== null && batteryVolts < BATTERY_MAINTENANCE_THRESHOLD_V;
+  const effectiveStatus =
+    vehicle.status === 'maintenance' && !batteryIsLow ? 'active' : vehicle.status;
   const isMoving = speed > 0;
 
   if (compact) {
@@ -77,8 +83,8 @@ export function VehicleCard({ vehicle, compact = false, onDetails }: VehicleCard
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={statusClasses[vehicle.status]}>
-            {statusLabels[vehicle.status]}
+          <span className={statusClasses[effectiveStatus]}>
+            {statusLabels[effectiveStatus]}
           </span>
           <span className={cn(
             'text-[10px] font-medium px-2 py-1 rounded-full',
@@ -109,14 +115,14 @@ export function VehicleCard({ vehicle, compact = false, onDetails }: VehicleCard
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className={statusClasses[vehicle.status]}>
+          <span className={statusClasses[effectiveStatus]}>
             <span className={cn(
               'w-1.5 h-1.5 rounded-full',
-              vehicle.status === 'active' && 'bg-success',
-              vehicle.status === 'inactive' && 'bg-muted-foreground',
-              vehicle.status === 'maintenance' && 'bg-warning'
+              effectiveStatus === 'active' && 'bg-success',
+              effectiveStatus === 'inactive' && 'bg-muted-foreground',
+              effectiveStatus === 'maintenance' && 'bg-warning'
             )} />
-            {statusLabels[vehicle.status]}
+            {statusLabels[effectiveStatus]}
           </span>
           <span className={cn(
             'text-xs font-medium px-2 py-1 rounded-full',
@@ -206,7 +212,7 @@ export function VehicleCard({ vehicle, compact = false, onDetails }: VehicleCard
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <MapPin className="w-4 h-4" />
             <span className="truncate">{vehicle.lastPosition.city}</span>
-            {vehicle.status === 'active' && (
+            {effectiveStatus === 'active' && (
               <span className="flex items-center gap-1 text-xs text-success ml-auto">
                 <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                 Live
@@ -249,17 +255,17 @@ export function VehicleCard({ vehicle, compact = false, onDetails }: VehicleCard
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <span>Batterie</span>
-                <span className={cn(battery !== null && battery < 20 && 'text-destructive')}>
-                  {battery !== null ? `${battery}%` : '—'}
+                <span className={cn(batteryIsLow && 'text-destructive')}>
+                  {batteryVolts !== null ? `${batteryVolts.toFixed(2)} V` : '—'}
                 </span>
               </div>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
                   className={cn(
                     'h-full',
-                    battery !== null && battery < 20 ? 'bg-destructive' : 'bg-success'
+                    batteryIsLow ? 'bg-destructive' : 'bg-success'
                   )}
-                  style={{ width: `${Math.min(battery ?? 0, 100)}%` }}
+                  style={{ width: `${batteryVolts !== null ? Math.max(0, Math.min(((batteryVolts - 9) / 5.5) * 100, 100)) : 0}%` }}
                 />
               </div>
             </div>

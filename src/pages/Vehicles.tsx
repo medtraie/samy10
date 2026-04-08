@@ -35,9 +35,23 @@ export default function Vehicles() {
   const [detailsVehicleId, setDetailsVehicleId] = useState<string | null>(null);
 
   const { data: vehicles = [], isLoading, isError, error, refetch, isFetching } = useGPSwoxVehicles(30000);
+  const BATTERY_MAINTENANCE_THRESHOLD_V = 9;
+
+  const vehiclesWithDisplayStatus = useMemo(
+    () =>
+      vehicles.map((vehicle) => {
+        const battery = vehicle.battery !== null ? Number(vehicle.battery) : null;
+        const shouldBeMaintenance = vehicle.status === 'maintenance' && battery !== null && battery < BATTERY_MAINTENANCE_THRESHOLD_V;
+        return {
+          ...vehicle,
+          status: shouldBeMaintenance ? 'maintenance' as const : vehicle.status === 'maintenance' ? 'active' as const : vehicle.status,
+        };
+      }),
+    [vehicles]
+  );
 
   const filteredVehicles = useMemo(() => {
-    return vehicles.filter((vehicle) => {
+    return vehiclesWithDisplayStatus.filter((vehicle) => {
       const matchesStatus = statusFilter === 'all' || vehicle.status === statusFilter;
       const matchesOnline = onlineFilter === 'all' || 
         (onlineFilter === 'online' && vehicle.online === 'online') ||
@@ -47,8 +61,8 @@ export default function Vehicles() {
         (fuelFilter === 'low' && vehicle.fuelQuantity !== null && vehicle.fuelQuantity < 20) ||
         (fuelFilter === 'ok' && (vehicle.fuelQuantity === null || vehicle.fuelQuantity >= 20));
       const matchesBattery = batteryFilter === 'all' ||
-        (batteryFilter === 'low' && vehicle.battery !== null && vehicle.battery < 20) ||
-        (batteryFilter === 'ok' && (vehicle.battery === null || vehicle.battery >= 20));
+        (batteryFilter === 'low' && vehicle.battery !== null && Number(vehicle.battery) < BATTERY_MAINTENANCE_THRESHOLD_V) ||
+        (batteryFilter === 'ok' && (vehicle.battery === null || Number(vehicle.battery) >= BATTERY_MAINTENANCE_THRESHOLD_V));
       const matchesSearch =
         searchQuery === '' ||
         vehicle.plate.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -56,7 +70,7 @@ export default function Vehicles() {
         (vehicle.driver && vehicle.driver.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesStatus && matchesOnline && matchesFuel && matchesBattery && matchesSearch;
     });
-  }, [vehicles, statusFilter, onlineFilter, fuelFilter, batteryFilter, searchQuery]);
+  }, [vehiclesWithDisplayStatus, statusFilter, onlineFilter, fuelFilter, batteryFilter, searchQuery]);
 
   const sortedVehicles = useMemo(() => {
     const list = [...filteredVehicles];
@@ -82,13 +96,13 @@ export default function Vehicles() {
   );
 
   // Stats
-  const totalVehicles = vehicles.length;
-  const onlineCount = vehicles.filter(v => v.online === 'online').length;
-  const offlineCount = vehicles.filter(v => v.online === 'offline').length;
-  const activeCount = vehicles.filter(v => v.status === 'active').length;
-  const movingCount = vehicles.filter(v => (v.lastPosition?.speed || 0) > 0).length;
-  const lowFuelCount = vehicles.filter(v => v.fuelQuantity !== null && v.fuelQuantity < 20).length;
-  const lowBatteryCount = vehicles.filter(v => v.battery !== null && v.battery < 20).length;
+  const totalVehicles = vehiclesWithDisplayStatus.length;
+  const onlineCount = vehiclesWithDisplayStatus.filter(v => v.online === 'online').length;
+  const offlineCount = vehiclesWithDisplayStatus.filter(v => v.online === 'offline').length;
+  const activeCount = vehiclesWithDisplayStatus.filter(v => v.status === 'active').length;
+  const movingCount = vehiclesWithDisplayStatus.filter(v => (v.lastPosition?.speed || 0) > 0).length;
+  const lowFuelCount = vehiclesWithDisplayStatus.filter(v => v.fuelQuantity !== null && v.fuelQuantity < 20).length;
+  const lowBatteryCount = vehiclesWithDisplayStatus.filter(v => v.battery !== null && Number(v.battery) < BATTERY_MAINTENANCE_THRESHOLD_V).length;
 
   const handleExport = () => {
     const headers = ['Plate', 'IMEI', 'Status', 'Online', 'Driver', 'Mileage', 'DistanceToday', 'Speed', 'City', 'LastUpdate'];
@@ -256,8 +270,8 @@ export default function Vehicles() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Toutes batteries</SelectItem>
-                <SelectItem value="low">Basse (&lt; 20%)</SelectItem>
-                <SelectItem value="ok">OK (≥ 20%)</SelectItem>
+                <SelectItem value="low">Basse (&lt; 9V)</SelectItem>
+                <SelectItem value="ok">OK (≥ 9V)</SelectItem>
               </SelectContent>
             </Select>
 
@@ -429,7 +443,7 @@ export default function Vehicles() {
               </div>
               <div className="rounded-lg border border-border p-3">
                 <p className="text-muted-foreground">Batterie</p>
-                <p className="font-medium">{detailsVehicle.battery !== null ? `${detailsVehicle.battery}%` : '-'}</p>
+                <p className="font-medium">{detailsVehicle.battery !== null ? `${Number(detailsVehicle.battery).toFixed(2)} V` : '-'}</p>
               </div>
               <div className="rounded-lg border border-border p-3">
                 <p className="text-muted-foreground">Network / Protocol</p>
