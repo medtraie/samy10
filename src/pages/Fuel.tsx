@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,8 @@ import {
   Car,
   Gauge,
   Droplets,
+  CreditCard,
+  FileDown,
   ArrowUpRight,
   ArrowDownRight
 } from 'lucide-react';
@@ -51,6 +53,18 @@ import {
   Legend
 } from 'recharts';
 import { useGPSwoxVehicles } from '@/hooks/useGPSwoxVehicles';
+import { useFuelPriceAuditLogs, useFuelPriceHistory, useSetActiveFuelPrice } from '@/hooks/useFuelPriceConfig';
+import {
+  useAutoSyncFuelCardsFromGPSwox,
+  useFuelCardReport,
+  useFuelCardSettings,
+  useFuelCardSnapshot,
+  useFuelCardVehicleAmounts,
+  useFuelCardVehicleControls,
+  useSetVehicleCardEnabled,
+  useSetVehicleMonthlyCardAmount,
+  useUpdateFuelCardMonthlyAmount,
+} from '@/hooks/useFuelCards';
 import {
   Dialog,
   DialogContent,
@@ -64,33 +78,88 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 
 export default function Fuel() {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [pricePerLiter, setPricePerLiter] = useState(12.5); // Default price in MAD
+  const [reportDays, setReportDays] = useState<'7' | '15' | '30'>('30');
   const [tempPrice, setTempPrice] = useState('12.5');
+  const [tempMonthlyCardAmount, setTempMonthlyCardAmount] = useState('2000');
+  const [vehicleCardAmountDrafts, setVehicleCardAmountDrafts] = useState<Record<string, string>>({});
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
+  const [cardDetailsOpen, setCardDetailsOpen] = useState(false);
 
   const { data: vehicles = [], isLoading, refetch, isFetching } = useGPSwoxVehicles();
+  const { data: priceHistory = [], isLoading: priceHistoryLoading } = useFuelPriceHistory();
+  const setActiveFuelPrice = useSetActiveFuelPrice();
+  const { data: auditLogs = [] } = useFuelPriceAuditLogs(priceDialogOpen);
+  const { data: cardSettings = [] } = useFuelCardSettings();
+  const updateCardMonthlyAmount = useUpdateFuelCardMonthlyAmount();
+  const activePrice = useMemo(
+    () => priceHistory.find((entry) => entry.is_active) || priceHistory[0],
+    [priceHistory]
+  );
+  const pricePerLiter = activePrice?.price_per_liter ?? 12.5;
+  const activeCardSetting = cardSettings.find((setting) => setting.is_active) || cardSettings[0];
+  const monthlyCardAmountMad = activeCardSetting?.monthly_amount_mad ?? 2000;
+
+  useEffect(() => {
+    if (!priceDialogOpen) return;
+    setTempPrice(String(pricePerLiter));
+    setTempMonthlyCardAmount(String(monthlyCardAmountMad));
+  }, [priceDialogOpen, pricePerLiter, monthlyCardAmountMad]);
 
   // Filter vehicles with fuel data or sensors
   const vehiclesWithFuel = useMemo(() => vehicles.filter(v => 
     (v.fuelQuantity !== null && v.fuelQuantity !== undefined) || 
     (v.sensors && v.sensors.some(s => s.type === 'fuel'))
   ), [vehicles]);
+  const vehicleIdsForCards = useMemo(
+    () => vehiclesWithFuel.map((vehicle) => String(vehicle.id)),
+    [vehiclesWithFuel]
+  );
+  const { data: cardSnapshot = [] } = useFuelCardSnapshot(vehicleIdsForCards);
+  const { data: cardControls = [] } = useFuelCardVehicleControls(vehicleIdsForCards);
+  const { data: vehicleCardAmounts = [] } = useFuelCardVehicleAmounts(vehicleIdsForCards);
+  const setVehicleCardEnabled = useSetVehicleCardEnabled();
+  const setVehicleMonthlyCardAmount = useSetVehicleMonthlyCardAmount();
+  const { data: cardReportRows = [] } = useFuelCardReport(Number(reportDays), vehicleIdsForCards);
+  const cardByVehicleId = useMemo(
+    () => new Map(cardSnapshot.map((card) => [card.vehicle_id, card])),
+    [cardSnapshot]
+  );
+  const cardControlByVehicleId = useMemo(
+    () => new Map(cardControls.map((control) => [control.vehicle_id, control])),
+    [cardControls]
+  );
+  const vehicleCardAmountById = useMemo(
+    () => new Map(vehicleCardAmounts.map((row) => [row.vehicle_id, row])),
+    [vehicleCardAmounts]
+  );
+  useAutoSyncFuelCardsFromGPSwox(
+    vehiclesWithFuel.map((vehicle) => ({
+      id: String(vehicle.id),
+      fuelQuantity: vehicle.fuelQuantity,
+      lastPosition: vehicle.lastPosition ? { timestamp: vehicle.lastPosition.timestamp } : null,
+    }))
+  );
 
   const filteredVehicles = useMemo(() => vehiclesWithFuel.filter((vehicle) => {
     const matchesSearch = vehicle.plate.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (vehicle.driverDetails?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesVehicle = vehicleFilter === 'all' || String(vehicle.id) === vehicleFilter;
+    const card = cardByVehicleId.get(String(vehicle.id));
+    const cardLevelPercent = card && card.initial_amount_mad > 0
+      ? (card.remaining_amount_mad / card.initial_amount_mad) * 100
+      : 100;
     const matchesStatus = statusFilter === 'all' || 
-                          (statusFilter === 'low' && (vehicle.fuelQuantity || 0) < 20) ||
-                          (statusFilter === 'normal' && (vehicle.fuelQuantity || 0) >= 20);
+                          (statusFilter === 'low' && cardLevelPercent < 20) ||
+                          (statusFilter === 'normal' && cardLevelPercent >= 20);
     return matchesSearch && matchesVehicle && matchesStatus;
-  }), [vehiclesWithFuel, searchQuery, vehicleFilter, statusFilter]);
+  }), [vehiclesWithFuel, searchQuery, vehicleFilter, statusFilter, cardByVehicleId]);
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -100,16 +169,26 @@ export default function Fuel() {
       ? totalFuel / vehiclesWithFuel.length 
       : 0;
     const totalDistance = vehiclesWithFuel.reduce((acc, v) => acc + (v.distanceMonth || 0), 0);
-    const lowFuelCount = vehiclesWithFuel.filter(v => (v.fuelQuantity || 0) < 20).length;
+    const totalCardBudget = cardSnapshot.reduce((acc, card) => acc + Number(card.initial_amount_mad || 0), 0);
+    const totalCardSpent = cardSnapshot.reduce((acc, card) => acc + Number(card.spent_amount_mad || 0), 0);
+    const totalCardRemaining = cardSnapshot.reduce((acc, card) => acc + Number(card.remaining_amount_mad || 0), 0);
+    const lowCardCount = cardSnapshot.filter((card) => {
+      const initial = Number(card.initial_amount_mad || 0);
+      if (initial <= 0) return false;
+      return (Number(card.remaining_amount_mad || 0) / initial) * 100 < 20;
+    }).length;
     
     return {
       totalFuel,
       estimatedCost,
       avgFuelLevel,
       totalDistance,
-      lowFuelCount
+      totalCardBudget,
+      totalCardSpent,
+      totalCardRemaining,
+      lowCardCount
     };
-  }, [vehiclesWithFuel, pricePerLiter]);
+  }, [vehiclesWithFuel, pricePerLiter, cardSnapshot]);
 
   // Chart Data
   const consumptionData = useMemo(() => filteredVehicles
@@ -134,10 +213,106 @@ export default function Fuel() {
 
   const handlePriceSave = () => {
     const price = parseFloat(tempPrice);
-    if (!isNaN(price) && price > 0) {
-      setPricePerLiter(price);
-      setPriceDialogOpen(false);
-    }
+    if (isNaN(price) || price <= 0) return;
+    setActiveFuelPrice.mutate(
+      {
+        price_per_liter: price,
+        source: 'manual_update',
+        note: 'Mise à jour depuis Configuration du Carburant',
+      },
+      {
+        onSuccess: () => {
+          setPriceDialogOpen(false);
+        },
+      }
+    );
+  };
+
+  const handleApplyHistoricalPrice = (entry: { id: string; price_per_liter: number }) => {
+    setActiveFuelPrice.mutate({
+      price_per_liter: entry.price_per_liter,
+      source: 'history_apply',
+      applied_from_id: entry.id,
+      note: 'Réappliqué depuis historique',
+    });
+  };
+
+  const handleMonthlyCardAmountSave = () => {
+    const amount = parseFloat(tempMonthlyCardAmount);
+    if (isNaN(amount) || amount <= 0) return;
+    updateCardMonthlyAmount.mutate(amount);
+  };
+
+  const handleResetMonthlyCardDefault = () => {
+    setTempMonthlyCardAmount('2000');
+    updateCardMonthlyAmount.mutate(2000);
+  };
+
+  const handleToggleVehicleCard = (vehicleId: string, enabled: boolean) => {
+    setVehicleCardEnabled.mutate({
+      vehicle_id: vehicleId,
+      is_enabled: enabled,
+      note: enabled ? 'Carte activée' : 'Carte désactivée',
+    });
+  };
+
+  const handleVehicleCardAmountDraftChange = (vehicleId: string, value: string) => {
+    setVehicleCardAmountDrafts((prev) => ({ ...prev, [vehicleId]: value }));
+  };
+
+  const handleSaveVehicleCardAmount = (vehicleId: string) => {
+    const raw = vehicleCardAmountDrafts[vehicleId];
+    const amount = parseFloat(raw || '');
+    if (isNaN(amount) || amount <= 0) return;
+    setVehicleMonthlyCardAmount.mutate({
+      vehicle_id: vehicleId,
+      monthly_amount_mad: amount,
+    });
+  };
+
+  const handleResetVehicleCardAmountToDefault = (vehicleId: string) => {
+    handleVehicleCardAmountDraftChange(vehicleId, String(monthlyCardAmountMad));
+    setVehicleMonthlyCardAmount.mutate({
+      vehicle_id: vehicleId,
+      monthly_amount_mad: monthlyCardAmountMad,
+    });
+  };
+
+  const handleExportCardReport = () => {
+    const rows = cardReportRows.map((row) => {
+      const vehicle = vehicles.find((v) => String(v.id) === row.vehicle_id);
+      return {
+        vehicle: vehicle?.plate || row.vehicle_id,
+        consumedMAD: Number(row.consumed_mad || 0).toFixed(2),
+        consumedLiters: Number(row.consumed_liters || 0).toFixed(2),
+        remainingMAD: Number(row.remaining_mad || 0).toFixed(2),
+        remainingLiters: Number(row.remaining_liters_est || 0).toFixed(2),
+        monthStart: row.month_start,
+      };
+    });
+
+    const headers = ['Véhicule', 'Consommé MAD', 'Consommé L', 'Restant MAD', 'Restant L', 'Mois'];
+    const csvLines = [headers.join(',')].concat(
+      rows.map((row) =>
+        [
+          row.vehicle,
+          row.consumedMAD,
+          row.consumedLiters,
+          row.remainingMAD,
+          row.remainingLiters,
+          row.monthStart,
+        ]
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(',')
+      )
+    );
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `fuel-card-report-${reportDays}j-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const formatCurrency = (amount: number) => {
@@ -184,6 +359,10 @@ export default function Fuel() {
               <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
               Actualiser
             </Button>
+            <Button variant="outline" className="gap-2" onClick={() => setCardDetailsOpen(true)}>
+              <CreditCard className="h-4 w-4" />
+              Détails Carte
+            </Button>
             <Dialog open={priceDialogOpen} onOpenChange={setPriceDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="gap-2 shadow-md hover:shadow-lg transition-all">
@@ -191,38 +370,152 @@ export default function Fuel() {
                   Configuration Prix
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
+              <DialogContent className="sm:max-w-[760px]">
                 <DialogHeader>
                   <DialogTitle>Configuration du Carburant</DialogTitle>
                   <DialogDescription>
-                    Définissez le prix moyen du carburant pour les estimations de coûts.
+                    Définissez le prix du jour et le montant de la carte carburant (par défaut 2000 DH), puis consultez l&apos;historique.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="price" className="text-right">
-                      Prix / Litre
-                    </Label>
-                    <div className="col-span-3 relative">
-                      <Input
-                        id="price"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={tempPrice}
-                        onChange={(e) => setTempPrice(e.target.value)}
-                        className="pl-8"
-                      />
-                      <span className="absolute left-3 top-2.5 text-muted-foreground text-sm">Dh</span>
+                <Tabs defaultValue="update" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="update">Prix du jour</TabsTrigger>
+                    <TabsTrigger value="history">Historique</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="update" className="space-y-4 pt-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="price" className="text-right">
+                        Prix / Litre
+                      </Label>
+                      <div className="col-span-3 relative">
+                        <Input
+                          id="price"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={tempPrice}
+                          onChange={(e) => setTempPrice(e.target.value)}
+                          className="pl-8"
+                        />
+                        <span className="absolute left-3 top-2.5 text-muted-foreground text-sm">Dh</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground">
-                    Actuellement: <span className="font-bold text-foreground">{pricePerLiter} MAD/L</span>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={handlePriceSave}>Enregistrer les modifications</Button>
-                </DialogFooter>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="monthly-card" className="text-right">
+                        Carte Mensuelle
+                      </Label>
+                      <div className="col-span-3 flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            id="monthly-card"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={tempMonthlyCardAmount}
+                            onChange={(e) => setTempMonthlyCardAmount(e.target.value)}
+                            className="pl-8"
+                          />
+                          <span className="absolute left-3 top-2.5 text-muted-foreground text-sm">Dh</span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleMonthlyCardAmountSave}
+                          disabled={updateCardMonthlyAmount.isPending}
+                        >
+                          Appliquer
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={handleResetMonthlyCardDefault}
+                          disabled={updateCardMonthlyAmount.isPending}
+                        >
+                          2000 DH
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground space-y-1">
+                      <div>
+                        Actuellement: <span className="font-bold text-foreground">{pricePerLiter.toFixed(2)} MAD/L</span>
+                      </div>
+                      <div>
+                        Budget mensuel carte: <span className="font-bold text-foreground">{formatCurrency(monthlyCardAmountMad)}</span>
+                      </div>
+                      <div>
+                        Date d&apos;application: <span className="font-medium text-foreground">{activePrice ? new Date(activePrice.created_at).toLocaleString('fr-FR') : '-'}</span>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button onClick={handlePriceSave} disabled={setActiveFuelPrice.isPending}>
+                        Enregistrer les modifications
+                      </Button>
+                    </DialogFooter>
+                  </TabsContent>
+                  <TabsContent value="history" className="pt-4">
+                    <div className="max-h-80 overflow-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Prix / Litre</TableHead>
+                            <TableHead>Source</TableHead>
+                            <TableHead className="text-right">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {priceHistory.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center text-muted-foreground">
+                                Aucun historique.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            priceHistory.map((entry) => (
+                              <TableRow key={entry.id}>
+                                <TableCell>
+                                  <div className="text-sm">{new Date(entry.created_at).toLocaleDateString('fr-FR')}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {new Date(entry.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="font-semibold">{Number(entry.price_per_liter).toFixed(2)} MAD</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {entry.source === 'history_apply' ? 'Réappliqué' : 'Mise à jour'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {entry.is_active ? (
+                                    <Badge variant="secondary">Actif</Badge>
+                                  ) : (
+                                    <Button variant="outline" size="sm" onClick={() => handleApplyHistoricalPrice(entry)}>
+                                      Appliquer à la flotte
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="mt-4 rounded-md border p-3 space-y-2">
+                      <div className="text-sm font-medium">Audit Trail</div>
+                      {priceHistoryLoading ? (
+                        <div className="text-xs text-muted-foreground">Chargement...</div>
+                      ) : auditLogs.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">Aucune action auditée.</div>
+                      ) : (
+                        <div className="space-y-1 max-h-28 overflow-auto">
+                          {auditLogs.slice(0, 8).map((log) => (
+                            <div key={log.id} className="text-xs text-muted-foreground">
+                              {new Date(log.created_at).toLocaleString('fr-FR')} — {log.action_type}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
               </DialogContent>
             </Dialog>
           </div>
@@ -265,6 +558,9 @@ export default function Fuel() {
                 <h3 className="text-2xl font-bold tracking-tight">{formatCurrency(stats.estimatedCost)}</h3>
                 <p className="text-sm text-muted-foreground">Valeur Carburant</p>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Base: {pricePerLiter.toFixed(2)} MAD/L ({activePrice ? new Date(activePrice.created_at).toLocaleDateString('fr-FR') : '-'})
+              </p>
             </CardContent>
           </Card>
 
@@ -280,10 +576,14 @@ export default function Fuel() {
                 </div>
               </div>
               <div className="space-y-1">
-                <h3 className="text-2xl font-bold tracking-tight">{stats.avgFuelLevel.toFixed(1)} L</h3>
-                <p className="text-sm text-muted-foreground">Niveau Moyen / Véhicule</p>
+                <h3 className="text-2xl font-bold tracking-tight">{formatCurrency(stats.totalCardRemaining)}</h3>
+                <p className="text-sm text-muted-foreground">Solde Cartes (Flotte)</p>
               </div>
-              <Progress value={Math.min(stats.avgFuelLevel, 100)} className="h-1.5 mt-3 bg-amber-100 dark:bg-amber-900/20" indicatorClassName="bg-amber-500" />
+              <Progress
+                value={stats.totalCardBudget > 0 ? Math.min((stats.totalCardRemaining / stats.totalCardBudget) * 100, 100) : 0}
+                className="h-1.5 mt-3 bg-amber-100 dark:bg-amber-900/20"
+                indicatorClassName="bg-amber-500"
+              />
             </CardContent>
           </Card>
 
@@ -294,15 +594,15 @@ export default function Fuel() {
                 <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
                   <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
                 </div>
-                {stats.lowFuelCount > 0 && (
+                {stats.lowCardCount > 0 && (
                   <Badge variant="destructive" className="animate-pulse">
                     Action Requise
                   </Badge>
                 )}
               </div>
               <div className="space-y-1">
-                <h3 className="text-2xl font-bold tracking-tight">{stats.lowFuelCount}</h3>
-                <p className="text-sm text-muted-foreground">Véhicules Niveau Bas (&lt;20L)</p>
+                <h3 className="text-2xl font-bold tracking-tight">{stats.lowCardCount}</h3>
+                <p className="text-sm text-muted-foreground">Cartes Critiques (&lt;20%)</p>
               </div>
             </CardContent>
           </Card>
@@ -426,10 +726,24 @@ export default function Fuel() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tous les statuts</SelectItem>
-                  <SelectItem value="normal">Niveau Normal</SelectItem>
-                  <SelectItem value="low">Niveau Bas (&lt;20L)</SelectItem>
+                  <SelectItem value="normal">Carte Normal</SelectItem>
+                  <SelectItem value="low">Carte Critique (&lt;20%)</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={reportDays} onValueChange={(value: '7' | '15' | '30') => setReportDays(value)}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Rapport" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">7 jours</SelectItem>
+                  <SelectItem value="15">15 jours</SelectItem>
+                  <SelectItem value="30">30 jours</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" className="gap-2" onClick={handleExportCardReport}>
+                <FileDown className="h-4 w-4" />
+                Rapport
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -439,8 +753,9 @@ export default function Fuel() {
                   <TableRow>
                     <TableHead>Véhicule</TableHead>
                     <TableHead>Chauffeur</TableHead>
-                    <TableHead className="w-[200px]">Niveau Carburant</TableHead>
+                    <TableHead className="w-[240px]">Niveau Carte</TableHead>
                     <TableHead className="text-right">Volume (L)</TableHead>
+                    <TableHead className="text-right">Prix / Litre</TableHead>
                     <TableHead className="text-right">Valeur Est.</TableHead>
                     <TableHead className="text-right">Distance (Mois)</TableHead>
                     <TableHead className="text-center">Statut</TableHead>
@@ -449,15 +764,21 @@ export default function Fuel() {
                 <TableBody>
                   {filteredVehicles.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="h-24 text-center">
+                      <TableCell colSpan={8} className="h-24 text-center">
                         Aucun véhicule trouvé avec des données de carburant.
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredVehicles.map((vehicle) => {
                       const fuel = vehicle.fuelQuantity || 0;
-                      const fuelPct = Math.min(Math.max((fuel / 200) * 100, 0), 100); // Assuming 200L tank for viz
-                      const isLow = fuel < 20;
+                      const card = cardByVehicleId.get(String(vehicle.id));
+                      const control = cardControlByVehicleId.get(String(vehicle.id));
+                      const cardEnabled = control?.is_enabled ?? true;
+                      const cardInitial = Number(card?.initial_amount_mad || monthlyCardAmountMad);
+                      const cardRemaining = Number(card?.remaining_amount_mad || monthlyCardAmountMad);
+                      const cardSpent = Number(card?.spent_amount_mad || 0);
+                      const cardPct = cardInitial > 0 ? Math.min(Math.max((cardRemaining / cardInitial) * 100, 0), 100) : 0;
+                      const cardIsLow = cardPct < 20;
                       
                       return (
                         <TableRow key={vehicle.id} className="group hover:bg-muted/50 transition-colors">
@@ -467,33 +788,39 @@ export default function Fuel() {
                                 <Car className="h-4 w-4 text-primary" />
                               </div>
                               {vehicle.plate}
+                              {!cardEnabled && <Badge variant="outline">Carte OFF</Badge>}
                             </div>
                           </TableCell>
                           <TableCell>{vehicle.driverDetails?.name || '-'}</TableCell>
                           <TableCell>
                             <div className="flex flex-col gap-1">
                               <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>{fuelPct.toFixed(0)}%</span>
+                                <span>{formatCurrency(cardRemaining)} / {formatCurrency(cardInitial)}</span>
+                                <span>{cardPct.toFixed(0)}%</span>
                               </div>
                               <Progress 
-                                value={fuelPct} 
+                                value={cardPct}
                                 className="h-2" 
-                                indicatorClassName={isLow ? "bg-red-500" : fuelPct < 40 ? "bg-amber-500" : "bg-green-500"} 
+                                indicatorClassName={cardIsLow ? "bg-red-500 animate-pulse" : cardPct < 40 ? "bg-amber-500" : "bg-green-500"} 
                               />
+                              <div className="text-[11px] text-muted-foreground">
+                                Consommé: {formatCurrency(cardSpent)} • Est: {(cardSpent / Math.max(pricePerLiter, 0.001)).toFixed(1)} L
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell className="text-right font-bold">{fuel.toFixed(1)} L</TableCell>
+                          <TableCell className="text-right">{pricePerLiter.toFixed(2)} MAD</TableCell>
                           <TableCell className="text-right">{formatCurrency(fuel * pricePerLiter)}</TableCell>
                           <TableCell className="text-right">{vehicle.distanceMonth?.toLocaleString()} km</TableCell>
                           <TableCell className="text-center">
-                            {isLow ? (
+                            {cardIsLow ? (
                               <Badge variant="destructive" className="gap-1">
                                 <AlertTriangle className="h-3 w-3" />
-                                Critique
+                                Carte Faible
                               </Badge>
                             ) : (
-                              <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                Normal
+                              <Badge variant="secondary" className={cardEnabled ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : ""}>
+                                {cardEnabled ? 'Carte OK' : 'Carte OFF'}
                               </Badge>
                             )}
                           </TableCell>
@@ -509,6 +836,96 @@ export default function Fuel() {
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={cardDetailsOpen} onOpenChange={setCardDetailsOpen}>
+          <DialogContent className="sm:max-w-[980px]">
+            <DialogHeader>
+              <DialogTitle>Gestion Carte Carburant</DialogTitle>
+              <DialogDescription>
+                Activez/Désactivez la carte par véhicule et suivez consommation/restant sur {reportDays} jours.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-md border max-h-[60vh] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Véhicule</TableHead>
+                    <TableHead className="text-right">Montant Carte</TableHead>
+                    <TableHead className="text-right">Consommé (MAD)</TableHead>
+                    <TableHead className="text-right">Consommé (L)</TableHead>
+                    <TableHead className="text-right">Restant (MAD)</TableHead>
+                    <TableHead className="text-right">Restant (L est.)</TableHead>
+                    <TableHead className="text-center">Carte</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {cardReportRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        Aucun détail disponible.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    cardReportRows.map((row) => {
+                      const vehicle = vehicles.find((v) => String(v.id) === row.vehicle_id);
+                      const control = cardControlByVehicleId.get(row.vehicle_id);
+                      const enabled = control?.is_enabled ?? true;
+                      const vehicleAmount = vehicleCardAmountById.get(row.vehicle_id);
+                      const effectiveAmount = Number(vehicleAmount?.monthly_amount_mad || monthlyCardAmountMad);
+                      const draftValue = vehicleCardAmountDrafts[row.vehicle_id] ?? String(effectiveAmount);
+                      return (
+                        <TableRow key={`${row.vehicle_id}-${row.month_start}`}>
+                          <TableCell className="font-medium">{vehicle?.plate || row.vehicle_id}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <Input
+                                value={draftValue}
+                                onChange={(e) => handleVehicleCardAmountDraftChange(row.vehicle_id, e.target.value)}
+                                className="h-8 w-24 text-right"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleSaveVehicleCardAmount(row.vehicle_id)}
+                                disabled={setVehicleMonthlyCardAmount.isPending}
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleResetVehicleCardAmountToDefault(row.vehicle_id)}
+                                disabled={setVehicleMonthlyCardAmount.isPending}
+                              >
+                                2000
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">{formatCurrency(Number(row.consumed_mad || 0))}</TableCell>
+                          <TableCell className="text-right">{Number(row.consumed_liters || 0).toFixed(2)} L</TableCell>
+                          <TableCell className="text-right">{formatCurrency(Number(row.remaining_mad || 0))}</TableCell>
+                          <TableCell className="text-right">{Number(row.remaining_liters_est || 0).toFixed(2)} L</TableCell>
+                          <TableCell className="text-center">
+                            <div className="inline-flex items-center gap-2">
+                              <Switch
+                                checked={enabled}
+                                onCheckedChange={(checked) => handleToggleVehicleCard(row.vehicle_id, checked)}
+                              />
+                              <span className="text-xs text-muted-foreground">{enabled ? 'ON' : 'OFF'}</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
