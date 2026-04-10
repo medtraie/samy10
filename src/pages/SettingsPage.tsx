@@ -173,6 +173,7 @@ export default function SettingsPage() {
     { key: 'finance', label: 'Finance', description: 'Trésorerie, caisses et banques' },
     { key: 'reports', label: 'Rapports', description: 'Analyses et statistiques' },
     { key: 'societe', label: 'Société', description: 'Profil global de l’entreprise' },
+    { key: 'facturation', label: 'Facturation', description: 'Cycle Devis, BC, BL et Factures avec preview' },
     { key: 'alerts', label: 'Alertes', description: 'Notifications et rappels' },
   ];
 

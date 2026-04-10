@@ -31,6 +31,7 @@ const resources = {
         alerts: 'Alertes',
         reports: 'Rapports',
         societe: 'Société',
+        facturation: 'Facturation',
       },
       achats: {
         title: 'Achats',
@@ -213,6 +214,7 @@ const resources = {
         alerts: 'التنبيهات',
         reports: 'التقارير',
         societe: 'الشركة',
+        facturation: 'الفوترة',
       },
       achats: {
         title: 'المشتريات',

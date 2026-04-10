@@ -27,6 +27,7 @@ export interface ModuleSettings {
   reports: boolean;
   alerts: boolean;
   societe: boolean;
+  facturation: boolean;
 }
 
 const DEFAULT_SETTINGS: ModuleSettings = {
@@ -54,6 +55,7 @@ const DEFAULT_SETTINGS: ModuleSettings = {
   reports: true,
   alerts: true,
   societe: true,
+  facturation: true,
 };
 
 export function useAppSettings() {

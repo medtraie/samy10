@@ -26,6 +26,7 @@ import {
   UserCog,
   KeyRound,
   Building2,
+  ReceiptText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -59,6 +60,7 @@ const navItems = [
   { key: 'maintenance', icon: Wrench, path: '/maintenance', module: 'maintenance' },
   { key: 'clients', icon: Users, path: '/clients', module: 'clients' },
   { key: 'societe', icon: Building2, path: '/societe', module: 'societe' },
+  { key: 'facturation', icon: ReceiptText, path: '/facturation', module: 'facturation' },
   { key: 'achats', icon: ShoppingCart, path: '/achats', module: 'achats' },
   { key: 'finance', icon: DollarSign, path: '/finance', module: 'finance' },
   { key: 'comptabilite', icon: BookOpen, path: '/comptabilite', module: 'comptabilite' },
