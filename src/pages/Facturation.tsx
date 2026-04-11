@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,14 +7,29 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useNavigate } from 'react-router-dom';
 import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
 import {
+  useAchatsSuppliers,
+  useBulkUpdatePurchaseOrdersStatus,
+  useBulkUpdateSupplierInvoicesStatus,
+  useCreatePurchaseOrder,
+  useCreateSupplierInvoice,
+  useDeletePurchaseOrder,
+  useDeleteSupplierInvoice,
+  usePurchaseOrders,
+  useSupplierInvoices,
+} from '@/hooks/useAchats';
+import { createStockItem, deleteStockItem, getStockItems, updateStockItem } from '@/services/stockService';
+import { StockItem } from '@/types/stock';
+import {
   FactDirection,
+  FactDocument,
   FactDocumentItem,
   FactDocumentType,
   FactLanguage,
@@ -29,7 +45,7 @@ import {
   useSendFactDocumentWhatsApp,
   useUpdateFactDocument,
 } from '@/hooks/useFacturation';
-import { ArrowRightLeft, Eye, FileDown, FileSpreadsheet, FileText, Mail, MessageCircle, Plus, Sparkles } from 'lucide-react';
+import { Activity, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileDown, Filter, Grid3X3, ListChecks, Mail, MessageCircle, PackagePlus, Plus, Search, Sparkles, Table2, TriangleAlert, Users2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -103,12 +119,120 @@ const templateClassMap: Record<FactTemplateType, string> = {
 };
 
 export default function Facturation() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [mainModule, setMainModule] = useState<'home' | 'contacts' | 'sales' | 'purchases' | 'catalog' | 'analytics'>('sales');
+  const [contactsTab, setContactsTab] = useState<'clients' | 'suppliers'>('clients');
+  const [achatsTab, setAchatsTab] = useState<'orders' | 'invoices'>('orders');
+  const [contactsSearch, setContactsSearch] = useState('');
+  const [clientFormOpen, setClientFormOpen] = useState(false);
+  const [newClientType, setNewClientType] = useState<'societe' | 'particulier'>('societe');
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientAddress, setNewClientAddress] = useState('');
+  const [newClientPostalCode, setNewClientPostalCode] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientGsm, setNewClientGsm] = useState('');
+  const [newClientFax, setNewClientFax] = useState('');
+  const [newClientWebsite, setNewClientWebsite] = useState('');
+  const [newClientCity, setNewClientCity] = useState('');
+  const [newClientCountry, setNewClientCountry] = useState('Maroc');
+  const [newClientIce, setNewClientIce] = useState('');
+  const [newClientIf, setNewClientIf] = useState('');
+  const [newClientRc, setNewClientRc] = useState('');
+  const [newClientCreatedDate, setNewClientCreatedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
+  const [newSupplierType, setNewSupplierType] = useState<'societe' | 'particulier'>('societe');
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierAddress, setNewSupplierAddress] = useState('');
+  const [newSupplierPostalCode, setNewSupplierPostalCode] = useState('');
+  const [newSupplierEmail, setNewSupplierEmail] = useState('');
+  const [newSupplierPhone, setNewSupplierPhone] = useState('');
+  const [newSupplierGsm, setNewSupplierGsm] = useState('');
+  const [newSupplierFax, setNewSupplierFax] = useState('');
+  const [newSupplierWebsite, setNewSupplierWebsite] = useState('');
+  const [newSupplierCity, setNewSupplierCity] = useState('');
+  const [newSupplierCountry, setNewSupplierCountry] = useState('Maroc');
+  const [newSupplierIce, setNewSupplierIce] = useState('');
+  const [newSupplierIf, setNewSupplierIf] = useState('');
+  const [newSupplierRc, setNewSupplierRc] = useState('');
+  const [newSupplierCreatedDate, setNewSupplierCreatedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [manualClients, setManualClients] = useState<Array<{
+    id: string;
+    name: string;
+    city: string;
+    email: string;
+    phone: string;
+    total: number;
+    clientType: 'societe' | 'particulier';
+    address: string;
+    postalCode: string;
+    country: string;
+    gsm: string;
+    fax: string;
+    website: string;
+    ice: string;
+    ifCode: string;
+    rcCode: string;
+    createdDate: string;
+  }>>([]);
+  const [manualSuppliers, setManualSuppliers] = useState<Array<{
+    id: string;
+    name: string;
+    city: string;
+    email: string;
+    phone: string;
+    total: number;
+    clientType: 'societe' | 'particulier';
+    address: string;
+    postalCode: string;
+    country: string;
+    gsm: string;
+    fax: string;
+    website: string;
+    ice: string;
+    ifCode: string;
+    rcCode: string;
+    createdDate: string;
+  }>>([]);
+  const [newDocDialogOpen, setNewDocDialogOpen] = useState(false);
+  const [newDocClientId, setNewDocClientId] = useState('');
+  const [newDocIssueDate, setNewDocIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [salesView, setSalesView] = useState<'table' | 'grid'>('table');
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [salesPage, setSalesPage] = useState(1);
+  const [homeMonthCursor, setHomeMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductPrice, setNewProductPrice] = useState('');
+  const [newProductCategory, setNewProductCategory] = useState('Service');
+  const [newProductUnit, setNewProductUnit] = useState('u');
+  const [newProductStock, setNewProductStock] = useState('0');
+  const [newPurchaseSupplierId, setNewPurchaseSupplierId] = useState('');
+  const [newPurchaseAmount, setNewPurchaseAmount] = useState('');
+  const [newInvoiceSupplierId, setNewInvoiceSupplierId] = useState('');
+  const [newInvoiceAmount, setNewInvoiceAmount] = useState('');
+  const [achatsSearch, setAchatsSearch] = useState('');
+  const [achatsStatusFilter, setAchatsStatusFilter] = useState('all');
+  const [achatsPage, setAchatsPage] = useState(1);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState('all');
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogItems] = useState([
+    { id: 'prd-1', name: 'Location véhicule tourisme', unit: 'jour', price: 950, tax: 20, stock: 999 },
+    { id: 'prd-2', name: 'Transfert Aéroport', unit: 'service', price: 420, tax: 20, stock: 999 },
+    { id: 'prd-3', name: 'Gasoil interne', unit: 'litre', price: 12.5, tax: 10, stock: 1430 },
+  ]);
   const { data: docs = [], isLoading: docsLoading } = useFactDocuments();
   const { data: stats } = useFactQuickStats();
   const { data: company } = useTourismCompanyProfile();
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [periodFilter, setPeriodFilter] = useState('all');
+  const [currentStage, setCurrentStage] = useState<FactDocumentType>('facture');
+  const [editorOpen, setEditorOpen] = useState(false);
   const [customColumnDraft, setCustomColumnDraft] = useState('');
-  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
+  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('preview');
   const [editor, setEditor] = useState<EditorState>(defaultEditor());
   const detailsQ = useFactDocumentDetails(selectedId);
   const createDoc = useCreateFactDocument();
@@ -118,9 +242,40 @@ export default function Facturation() {
   const createEvent = useCreateFactDocumentEvent();
   const sendEmail = useSendFactDocumentEmail();
   const sendWhatsApp = useSendFactDocumentWhatsApp();
+  const achatsSuppliersQ = useAchatsSuppliers();
+  const purchaseOrdersQ = usePurchaseOrders();
+  const supplierInvoicesQ = useSupplierInvoices();
+  const createPurchaseOrder = useCreatePurchaseOrder();
+  const createSupplierInvoice = useCreateSupplierInvoice();
+  const deletePurchaseOrder = useDeletePurchaseOrder();
+  const deleteSupplierInvoice = useDeleteSupplierInvoice();
+  const bulkUpdatePurchaseOrdersStatus = useBulkUpdatePurchaseOrdersStatus();
+  const bulkUpdateSupplierInvoicesStatus = useBulkUpdateSupplierInvoicesStatus();
+  const stockItemsQ = useQuery({
+    queryKey: ['facturation_stock_items'],
+    queryFn: getStockItems,
+  });
+  const createCatalogItem = useMutation({
+    mutationFn: createStockItem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['facturation_stock_items'] });
+    },
+  });
+  const updateCatalogItem = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<StockItem> }) => updateStockItem(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['facturation_stock_items'] });
+    },
+  });
+  const deleteCatalogItem = useMutation({
+    mutationFn: (id: string) => deleteStockItem(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['facturation_stock_items'] });
+    },
+  });
 
   useEffect(() => {
-    if (!detailsQ.data?.document) return;
+    if (!selectedId || !detailsQ.data?.document || detailsQ.data.document.id !== selectedId) return;
     const d = detailsQ.data.document;
     setEditor({
       id: d.id,
@@ -144,7 +299,8 @@ export default function Facturation() {
       source_document_id: d.source_document_id,
       items: detailsQ.data.items.length > 0 ? detailsQ.data.items : [defaultItem()],
     });
-  }, [detailsQ.data]);
+  }, [selectedId, detailsQ.data]);
+
 
   const previewTotals = useMemo(() => {
     const subtotal = editor.items.reduce((acc, item) => {
@@ -204,19 +360,8 @@ export default function Facturation() {
   };
 
   const handleNew = (docType: FactDocumentType) => {
-    const direction = editor.language === 'ar' ? 'rtl' : 'ltr';
-    setSelectedId(undefined);
-    setEditor({
-      ...defaultEditor(),
-      doc_type: docType,
-      direction,
-      language: editor.language,
-      client_name: '',
-      client_email: '',
-      client_phone: '',
-      client_address: '',
-      items: [defaultItem()],
-    });
+    setCurrentStage(docType);
+    openNewDocDialog();
   };
 
   const handleSave = () => {
@@ -407,170 +552,1415 @@ export default function Facturation() {
     });
   };
 
+  const docTypeLabels: Record<FactDocumentType, string> = {
+    devis: 'Devis',
+    bon_commande: 'Commandes',
+    bon_livraison: 'Livraisons',
+    facture: 'Factures',
+  };
+
+  const stageUi = useMemo(
+    () => ({
+      devis: { title: 'Devis clients', numberLabel: 'Devis N°' },
+      bon_commande: { title: 'Commandes clients', numberLabel: 'Commande N°' },
+      bon_livraison: { title: 'Livraisons clients', numberLabel: 'Livraison N°' },
+      facture: { title: 'Factures clients', numberLabel: 'Facture N°' },
+    }[currentStage]),
+    [currentStage]
+  );
+
+  const handleStageChange = (type: FactDocumentType) => {
+    setCurrentStage(type);
+    setSelectedId(undefined);
+    setSearchQuery('');
+    setStatusFilter('all');
+    setPeriodFilter('all');
+  };
+
+  const filteredDocs = useMemo(() => {
+    return docs.filter((doc) => {
+      if (doc.doc_type !== currentStage) return false;
+      if (statusFilter !== 'all' && doc.status !== statusFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const hit = doc.doc_number.toLowerCase().includes(q) || doc.client_name.toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      if (periodFilter === 'month') {
+        const now = new Date();
+        const d = new Date(doc.issue_date);
+        if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false;
+      }
+      return true;
+    });
+  }, [docs, currentStage, statusFilter, searchQuery, periodFilter]);
+
+  const clientsSummary = useMemo(() => {
+    const map = new Map<string, { client: string; count: number; total: number }>();
+    docs.forEach((doc) => {
+      const key = doc.client_name || 'Client';
+      const prev = map.get(key) || { client: key, count: 0, total: 0 };
+      prev.count += 1;
+      prev.total += Number(doc.total_amount || 0);
+      map.set(key, prev);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total).slice(0, 12);
+  }, [docs]);
+
+  useEffect(() => {
+    setSalesPage(1);
+  }, [currentStage, statusFilter, searchQuery, periodFilter, rowsPerPage]);
+
+  const salesTotalPages = useMemo(() => Math.max(1, Math.ceil(filteredDocs.length / rowsPerPage)), [filteredDocs.length, rowsPerPage]);
+  const salesPageSafe = Math.min(Math.max(1, salesPage), salesTotalPages);
+  const salesPagedDocs = useMemo(() => {
+    const start = (salesPageSafe - 1) * rowsPerPage;
+    return filteredDocs.slice(start, start + rowsPerPage);
+  }, [filteredDocs, rowsPerPage, salesPageSafe]);
+
+  const purchasesRows = useMemo(
+    () =>
+      (purchaseOrdersQ.data || []).map((order) => ({
+        id: order.id,
+        ref: order.order_number,
+        supplier: order.supplier_name,
+        type: 'BC Fournisseur',
+        date: order.order_date,
+        amount: Number(order.total_amount || 0),
+        status: order.status,
+      })),
+    [purchaseOrdersQ.data]
+  );
+
+  const supplierInvoicesRows = useMemo(
+    () =>
+      (supplierInvoicesQ.data || []).map((invoice) => ({
+        id: invoice.id,
+        ref: invoice.invoice_number,
+        supplier: invoice.supplier_name,
+        date: invoice.invoice_date,
+        dueDate: invoice.due_date,
+        amount: Number(invoice.total_amount || 0),
+        status: invoice.status,
+      })),
+    [supplierInvoicesQ.data]
+  );
+
+  const catalogRows = useMemo(() => {
+    const persisted = stockItemsQ.data || [];
+    if (persisted.length > 0) return persisted;
+    return catalogItems;
+  }, [stockItemsQ.data, catalogItems]);
+
+  useEffect(() => {
+    setAchatsPage(1);
+  }, [achatsTab, achatsSearch, achatsStatusFilter]);
+
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [catalogSearch, catalogCategoryFilter]);
+
+  const achatsSourceRows = useMemo(
+    () => (achatsTab === 'orders' ? purchasesRows : supplierInvoicesRows),
+    [achatsTab, purchasesRows, supplierInvoicesRows]
+  );
+
+  const achatsFilteredRows = useMemo(() => {
+    return achatsSourceRows.filter((row) => {
+      if (achatsStatusFilter !== 'all' && row.status !== achatsStatusFilter) return false;
+      if (achatsSearch.trim()) {
+        const q = achatsSearch.toLowerCase();
+        const searchable = `${row.ref} ${row.supplier} ${row.status}`.toLowerCase();
+        if (!searchable.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [achatsSourceRows, achatsStatusFilter, achatsSearch]);
+
+  const achatsTotalPages = useMemo(() => Math.max(1, Math.ceil(achatsFilteredRows.length / 10)), [achatsFilteredRows.length]);
+  const achatsPageSafe = Math.min(Math.max(1, achatsPage), achatsTotalPages);
+  const achatsPagedRows = useMemo(() => {
+    const start = (achatsPageSafe - 1) * 10;
+    return achatsFilteredRows.slice(start, start + 10);
+  }, [achatsFilteredRows, achatsPageSafe]);
+
+  const catalogFilteredRows = useMemo(() => {
+    return catalogRows.filter((item) => {
+      if (catalogCategoryFilter !== 'all' && String((item as StockItem).category || '') !== catalogCategoryFilter) return false;
+      if (catalogSearch.trim()) {
+        const q = catalogSearch.toLowerCase();
+        const searchable = `${(item as StockItem).name || ''} ${(item as StockItem).category || ''} ${(item as StockItem).reference || ''}`.toLowerCase();
+        if (!searchable.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [catalogRows, catalogSearch, catalogCategoryFilter]);
+
+  const catalogTotalPages = useMemo(() => Math.max(1, Math.ceil(catalogFilteredRows.length / 10)), [catalogFilteredRows.length]);
+  const catalogPageSafe = Math.min(Math.max(1, catalogPage), catalogTotalPages);
+  const catalogPagedRows = useMemo(() => {
+    const start = (catalogPageSafe - 1) * 10;
+    return catalogFilteredRows.slice(start, start + 10);
+  }, [catalogFilteredRows, catalogPageSafe]);
+
+  const analyticsSummary = useMemo(() => {
+    const factures = docs.filter((d) => d.doc_type === 'facture');
+    const devis = docs.filter((d) => d.doc_type === 'devis');
+    const conversionRate = devis.length > 0 ? (factures.length / devis.length) * 100 : 0;
+    const revenue = factures.reduce((acc, d) => acc + Number(d.total_amount || 0), 0);
+    const overdue = factures.filter((d) => d.status === 'overdue').reduce((acc, d) => acc + Number(d.total_amount || 0), 0);
+    const averageTicket = factures.length > 0 ? revenue / factures.length : 0;
+    return { conversionRate, revenue, overdue, averageTicket };
+  }, [docs]);
+
+  const homeCalendar = useMemo(() => {
+    const year = homeMonthCursor.getFullYear();
+    const month = homeMonthCursor.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const leading = (firstDay.getDay() + 6) % 7;
+    const daysInMonth = lastDay.getDate();
+    const cells: Array<{ day?: number; iso?: string; overdueCount?: number }> = [];
+    for (let i = 0; i < leading; i += 1) cells.push({});
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const iso = new Date(year, month, day).toISOString().slice(0, 10);
+      const overdueCount = docs.filter((d) => d.issue_date === iso && d.status === 'overdue').length;
+      cells.push({ day, iso, overdueCount });
+    }
+    while (cells.length % 7 !== 0) cells.push({});
+    return { cells, monthLabel: homeMonthCursor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) };
+  }, [homeMonthCursor, docs]);
+
+  const getStatusBadge = (doc: FactDocument) => {
+    if (doc.status === 'paid') {
+      return (
+        <Badge className="bg-green-500/15 text-green-600 border-green-500/30 gap-1">
+          <CheckCircle2 className="w-3 h-3" />
+          Payé
+        </Badge>
+      );
+    }
+    if (doc.status === 'overdue' || doc.status === 'failed') {
+      return (
+        <Badge variant="destructive" className="gap-1">
+          <TriangleAlert className="w-3 h-3" />
+          {doc.status}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="gap-1">
+        <Clock3 className="w-3 h-3" />
+        {doc.status}
+      </Badge>
+    );
+  };
+
+  const contactsRows = useMemo(() => {
+    const inferredSuppliers = clientsSummary
+      .slice(0, 8)
+      .map((row, idx) => ({
+        id: `sup-${idx}`,
+        name: row.client,
+        city: ['Casablanca', 'Rabat', 'Marrakech', 'Tanger'][idx % 4],
+        email: `${row.client.replace(/\s+/g, '.').toLowerCase()}@mail.com`,
+        phone: `+212 6${(10000000 + idx * 1337).toString().slice(0, 8)}`,
+      }));
+    const suppliers = [...manualSuppliers, ...inferredSuppliers];
+    const inferredClients = clientsSummary
+      .map((row, idx) => ({
+        id: `cli-${idx}`,
+        name: row.client,
+        city: ['Casablanca', 'Rabat', 'Agadir', 'Fès', 'Meknès'][idx % 5],
+        email: `${row.client.replace(/\s+/g, '.').toLowerCase()}@client.com`,
+        phone: `+212 6${(20000000 + idx * 1777).toString().slice(0, 8)}`,
+        total: row.total,
+      }));
+    const clients = [...manualClients, ...inferredClients];
+    return { suppliers, clients };
+  }, [clientsSummary, manualClients, manualSuppliers]);
+
+  const contactsFiltered = useMemo(() => {
+    const q = contactsSearch.trim().toLowerCase();
+    const list = contactsTab === 'suppliers' ? contactsRows.suppliers : contactsRows.clients;
+    if (!q) return list;
+    return list.filter((row) => JSON.stringify(row).toLowerCase().includes(q));
+  }, [contactsRows, contactsTab, contactsSearch]);
+
+  const handleAddCatalogItem = () => {
+    const name = newProductName.trim();
+    const price = Number(newProductPrice);
+    const qty = Number(newProductStock || 0);
+    if (!name || Number.isNaN(price) || price <= 0) return;
+    createCatalogItem.mutate({
+      name,
+      reference: `CAT-${Date.now()}`,
+      category: newProductCategory || 'Service',
+      quantity: Number.isNaN(qty) ? 0 : qty,
+      min_quantity: 0,
+      unit: newProductUnit || 'u',
+      unit_price: price,
+      supplier_id: null,
+      location: 'Facturation',
+      last_restocked: new Date().toISOString().slice(0, 10),
+    });
+    setNewProductName('');
+    setNewProductPrice('');
+    setNewProductCategory('Service');
+    setNewProductUnit('u');
+    setNewProductStock('0');
+  };
+
+  const handleCreatePurchaseOrderQuick = () => {
+    const supplier = (achatsSuppliersQ.data || []).find((s) => s.id === newPurchaseSupplierId);
+    const amount = Number(newPurchaseAmount || 0);
+    if (!supplier || Number.isNaN(amount) || amount <= 0) return;
+    createPurchaseOrder.mutate(
+      {
+        order: {
+          order_number: `BC-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`,
+          supplier_name: supplier.legal_name,
+          supplier_id: supplier.id,
+          order_date: new Date().toISOString().slice(0, 10),
+          expected_delivery_date: null,
+          status: 'draft',
+          subtotal: amount,
+          tax_rate: 20,
+          tax_amount: amount * 0.2,
+          total_amount: amount * 1.2,
+          notes: 'Créé depuis Facturation',
+        },
+        items: [
+          {
+            description: 'Achat divers',
+            quantity: 1,
+            unit: 'u',
+            unit_price: amount,
+            total_price: amount,
+          },
+        ],
+      },
+      {
+        onSuccess: () => {
+          setNewPurchaseSupplierId('');
+          setNewPurchaseAmount('');
+        },
+      }
+    );
+  };
+
+  const handleCreateSupplierInvoiceQuick = () => {
+    const supplier = (achatsSuppliersQ.data || []).find((s) => s.id === newInvoiceSupplierId);
+    const amount = Number(newInvoiceAmount || 0);
+    if (!supplier || Number.isNaN(amount) || amount <= 0) return;
+    createSupplierInvoice.mutate(
+      {
+        invoice: {
+          invoice_number: `F-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`,
+          supplier_name: supplier.legal_name,
+          supplier_id: supplier.id,
+          invoice_date: new Date().toISOString().slice(0, 10),
+          due_date: null,
+          status: 'draft',
+          subtotal: amount,
+          tax_rate: 20,
+          tax_amount: amount * 0.2,
+          total_amount: amount * 1.2,
+          notes: 'Créée depuis Facturation',
+        },
+        items: [
+          {
+            description: 'Facture divers',
+            quantity: 1,
+            unit: 'u',
+            unit_price: amount,
+            total_price: amount,
+          },
+        ],
+      },
+      {
+        onSuccess: () => {
+          setNewInvoiceSupplierId('');
+          setNewInvoiceAmount('');
+        },
+      }
+    );
+  };
+
+  const handleArchivePurchaseOrder = (id: string) => {
+    deletePurchaseOrder.mutate(id);
+  };
+
+  const handleArchiveSupplierInvoice = (id: string) => {
+    deleteSupplierInvoice.mutate(id);
+  };
+
+  const handleAdvancePurchaseOrderStatus = (id: string, status: string) => {
+    const nextStatus = status === 'draft' ? 'sent' : status === 'sent' ? 'approved' : 'approved';
+    bulkUpdatePurchaseOrdersStatus.mutate({ ids: [id], status: nextStatus });
+  };
+
+  const handleAdvanceSupplierInvoiceStatus = (id: string, status: string) => {
+    const nextStatus = status === 'draft' ? 'sent' : status === 'sent' ? 'approved' : status === 'approved' ? 'paid' : 'paid';
+    bulkUpdateSupplierInvoicesStatus.mutate({ ids: [id], status: nextStatus });
+  };
+
+  const openClientCreation = () => {
+    setMainModule('contacts');
+    setContactsTab('clients');
+    setNewClientType('societe');
+    setNewClientName('');
+    setNewClientAddress('');
+    setNewClientPostalCode('');
+    setNewClientEmail('');
+    setNewClientPhone('');
+    setNewClientGsm('');
+    setNewClientFax('');
+    setNewClientWebsite('');
+    setNewClientCity('');
+    setNewClientCountry('Maroc');
+    setNewClientIce('');
+    setNewClientIf('');
+    setNewClientRc('');
+    setNewClientCreatedDate(new Date().toISOString().slice(0, 10));
+    setClientFormOpen(true);
+    setSupplierFormOpen(false);
+  };
+
+  const openSupplierCreation = () => {
+    setMainModule('contacts');
+    setContactsTab('suppliers');
+    setNewSupplierType('societe');
+    setNewSupplierName('');
+    setNewSupplierAddress('');
+    setNewSupplierPostalCode('');
+    setNewSupplierEmail('');
+    setNewSupplierPhone('');
+    setNewSupplierGsm('');
+    setNewSupplierFax('');
+    setNewSupplierWebsite('');
+    setNewSupplierCity('');
+    setNewSupplierCountry('Maroc');
+    setNewSupplierIce('');
+    setNewSupplierIf('');
+    setNewSupplierRc('');
+    setNewSupplierCreatedDate(new Date().toISOString().slice(0, 10));
+    setSupplierFormOpen(true);
+    setClientFormOpen(false);
+  };
+
+  const handleCreateClient = () => {
+    const name = newClientName.trim();
+    if (!name) return;
+    setManualClients((prev) => [
+      {
+        id: `manual-${Date.now()}`,
+        name,
+        city: newClientCity.trim() || 'Casablanca',
+        email: newClientEmail.trim() || `${name.replace(/\s+/g, '.').toLowerCase()}@client.com`,
+        phone: newClientPhone.trim() || '+212 600000000',
+        total: 0,
+        clientType: newClientType,
+        address: newClientAddress.trim(),
+        postalCode: newClientPostalCode.trim(),
+        country: newClientCountry.trim() || 'Maroc',
+        gsm: newClientGsm.trim(),
+        fax: newClientFax.trim(),
+        website: newClientWebsite.trim(),
+        ice: newClientIce.trim(),
+        ifCode: newClientIf.trim(),
+        rcCode: newClientRc.trim(),
+        createdDate: newClientCreatedDate,
+      },
+      ...prev,
+    ]);
+    setContactsSearch(name);
+    setClientFormOpen(false);
+    setNewClientType('societe');
+    setNewClientName('');
+    setNewClientAddress('');
+    setNewClientPostalCode('');
+    setNewClientEmail('');
+    setNewClientPhone('');
+    setNewClientGsm('');
+    setNewClientFax('');
+    setNewClientWebsite('');
+    setNewClientCity('');
+    setNewClientCountry('Maroc');
+    setNewClientIce('');
+    setNewClientIf('');
+    setNewClientRc('');
+    setNewClientCreatedDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const handleCreateSupplier = () => {
+    const name = newSupplierName.trim();
+    if (!name) return;
+    setManualSuppliers((prev) => [
+      {
+        id: `manual-sup-${Date.now()}`,
+        name,
+        city: newSupplierCity.trim() || 'Casablanca',
+        email: newSupplierEmail.trim() || `${name.replace(/\s+/g, '.').toLowerCase()}@supplier.com`,
+        phone: newSupplierPhone.trim() || '+212 600000000',
+        total: 0,
+        clientType: newSupplierType,
+        address: newSupplierAddress.trim(),
+        postalCode: newSupplierPostalCode.trim(),
+        country: newSupplierCountry.trim() || 'Maroc',
+        gsm: newSupplierGsm.trim(),
+        fax: newSupplierFax.trim(),
+        website: newSupplierWebsite.trim(),
+        ice: newSupplierIce.trim(),
+        ifCode: newSupplierIf.trim(),
+        rcCode: newSupplierRc.trim(),
+        createdDate: newSupplierCreatedDate,
+      },
+      ...prev,
+    ]);
+    setContactsSearch(name);
+    setSupplierFormOpen(false);
+    setNewSupplierType('societe');
+    setNewSupplierName('');
+    setNewSupplierAddress('');
+    setNewSupplierPostalCode('');
+    setNewSupplierEmail('');
+    setNewSupplierPhone('');
+    setNewSupplierGsm('');
+    setNewSupplierFax('');
+    setNewSupplierWebsite('');
+    setNewSupplierCity('');
+    setNewSupplierCountry('Maroc');
+    setNewSupplierIce('');
+    setNewSupplierIf('');
+    setNewSupplierRc('');
+    setNewSupplierCreatedDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const openNewDocDialog = () => {
+    setNewDocClientId('');
+    setNewDocIssueDate(new Date().toISOString().slice(0, 10));
+    setNewDocDialogOpen(true);
+  };
+
+  const handleQuickCreateDocument = () => {
+    const selectedClient = contactsRows.clients.find((c) => c.id === newDocClientId);
+    if (!selectedClient) return;
+    createDoc.mutate(
+      {
+        doc_type: currentStage,
+        client_name: selectedClient.name,
+        client_email: selectedClient.email,
+        client_phone: selectedClient.phone,
+        client_address: `${selectedClient.city}, Maroc`,
+        issue_date: newDocIssueDate,
+        language: 'fr',
+        direction: 'ltr',
+        show_header: true,
+        show_footer: true,
+      },
+      {
+        onSuccess: (doc) => {
+          setNewDocDialogOpen(false);
+          navigate(`/facturation/${doc.id}`);
+        },
+      }
+    );
+  };
+
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">Facturation</h1>
-            <p className="text-muted-foreground">Cycle documentaire intelligent: Devis → Bon de Commande → Bon de Livraison → Facture</p>
+      <div className="space-y-4">
+        <Card className="p-0 overflow-hidden border">
+          <div className="bg-sky-600 text-white px-4 py-2 flex items-center gap-6 text-sm font-medium">
+            <button className={cn('transition-all duration-200 hover:scale-105 hover:brightness-110', mainModule === 'home' && 'underline')} onClick={() => setMainModule('home')}>Accueil</button>
+            <button className={cn('transition-all duration-200 hover:scale-105 hover:brightness-110', mainModule === 'contacts' && 'underline')} onClick={() => setMainModule('contacts')}>Contacts</button>
+            <button className={cn('transition-all duration-200 hover:scale-105 hover:brightness-110', mainModule === 'sales' && 'underline')} onClick={() => setMainModule('sales')}>Ventes</button>
+            <button className={cn('transition-all duration-200 hover:scale-105 hover:brightness-110', mainModule === 'purchases' && 'underline')} onClick={() => setMainModule('purchases')}>Achats</button>
+            <button className={cn('transition-all duration-200 hover:scale-105 hover:brightness-110', mainModule === 'catalog' && 'underline')} onClick={() => setMainModule('catalog')}>Produits & Services</button>
+            <button className={cn('transition-all duration-200 hover:scale-105 hover:brightness-110', mainModule === 'analytics' && 'underline')} onClick={() => setMainModule('analytics')}>Analyse</button>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={editor.doc_type} onValueChange={(value: FactDocumentType) => setEditor((p) => ({ ...p, doc_type: value }))}>
-              <SelectTrigger className="w-[190px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="devis">Devis</SelectItem>
-                <SelectItem value="bon_commande">Bon de Commande</SelectItem>
-                <SelectItem value="bon_livraison">Bon de Livraison</SelectItem>
-                <SelectItem value="facture">Facture</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={() => handleNew(editor.doc_type)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Nouveau
-            </Button>
-            <Button variant="outline" onClick={handleSave} disabled={createDoc.isPending || updateDoc.isPending || replaceItems.isPending}>
-              Enregistrer
-            </Button>
-            <Button variant="outline" onClick={handleConvert} disabled={!editor.id || !nextTypeMap[editor.doc_type] || convertDoc.isPending}>
-              <ArrowRightLeft className="w-4 h-4 mr-2" />
-              Convertir
-            </Button>
-          </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2"><CardDescription>Ventes attendues (Devis)</CardDescription></CardHeader>
-            <CardContent className="text-xl font-semibold">{(stats?.pending_devis_amount || 0).toFixed(2)} MAD</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardDescription>B.L non facturé</CardDescription></CardHeader>
-            <CardContent className="text-xl font-semibold">{stats?.bl_not_invoiced_count || 0}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardDescription>Factures non payées</CardDescription></CardHeader>
-            <CardContent className="text-xl font-semibold">{stats?.unpaid_invoices_count || 0}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardDescription>Montant impayé</CardDescription></CardHeader>
-            <CardContent className="text-xl font-semibold">{(stats?.unpaid_invoices_amount || 0).toFixed(2)} MAD</CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-          <Card className="xl:col-span-3">
-            <CardHeader>
-              <CardTitle>Documents</CardTitle>
-              <CardDescription>Choisissez un document ou créez-en un nouveau</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 max-h-[660px] overflow-auto">
-              {docsLoading ? (
-                <div className="text-sm text-muted-foreground">Chargement...</div>
-              ) : docs.length === 0 ? (
-                <div className="text-sm text-muted-foreground">Aucun document.</div>
-              ) : (
-                docs.map((doc) => (
-                  <button
-                    key={doc.id}
-                    onClick={() => setSelectedId(doc.id)}
-                    className={cn(
-                      'w-full border rounded-md p-3 text-left transition',
-                      selectedId === doc.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                    )}
+          {mainModule === 'sales' ? (
+            <>
+              <div className="px-4 pt-3 flex items-center gap-2 flex-wrap">
+                {(['devis', 'bon_commande', 'bon_livraison', 'facture'] as FactDocumentType[]).map((type) => (
+                  <Button
+                    key={type}
+                    size="sm"
+                    variant={currentStage === type ? 'default' : 'outline'}
+                    className={cn('transition-all duration-200 hover:-translate-y-0.5', currentStage === type ? 'bg-lime-500 hover:bg-lime-600 text-black shadow-md' : 'hover:bg-white/10')}
+                    onClick={() => handleStageChange(type)}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium">{doc.doc_number}</div>
-                      <Badge variant="outline">{doc.doc_type}</Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">{doc.client_name}</div>
-                    <div className="text-xs mt-1">{Number(doc.total_amount || 0).toFixed(2)} MAD</div>
-                  </button>
-                ))
-              )}
-            </CardContent>
-          </Card>
+                    {docTypeLabels[type]}
+                  </Button>
+                ))}
+              </div>
 
-          <Card className="xl:col-span-6">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Éditeur Document</CardTitle>
-                  <CardDescription>Live Preview + Templates + Dynamic Fields</CardDescription>
-                </div>
+              <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-t">
                 <div className="flex items-center gap-2">
-                  <Button variant={activeTab === 'editor' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('editor')}>
-                    <FileSpreadsheet className="w-4 h-4 mr-1" />
-                    Édition
-                  </Button>
-                  <Button variant={activeTab === 'preview' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('preview')}>
-                    <Eye className="w-4 h-4 mr-1" />
-                    Preview
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={exportPreview}>
-                    <FileDown className="w-4 h-4 mr-1" />
-                    Export
-                  </Button>
+                  <h2 className="text-xl font-semibold">{stageUi.title}</h2>
                   <Button
-                    variant="outline"
                     size="sm"
-                    onClick={handleSendEmail}
-                    disabled={!editor.id || !editor.client_email || sendEmail.isPending}
+                    className="bg-sky-500 hover:bg-sky-600"
+                    onClick={() => {
+                      handleNew(currentStage);
+                    }}
                   >
-                    <Mail className="w-4 h-4 mr-1" />
-                    Envoyer
+                    <Plus className="w-4 h-4 mr-1" />
+                    Nouveau
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSendWhatsApp}
-                    disabled={!editor.id || !editor.client_phone || sendWhatsApp.isPending}
-                  >
-                    <MessageCircle className="w-4 h-4 mr-1" />
-                    WhatsApp
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-2 top-2.5 text-muted-foreground" />
+                    <Input
+                      className="pl-8 w-[240px]"
+                      placeholder="Rechercher..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes périodes</SelectItem>
+                      <SelectItem value="month">Ce mois</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[140px]">
+                      <Filter className="w-4 h-4 mr-1" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les états</SelectItem>
+                      <SelectItem value="draft">draft</SelectItem>
+                      <SelectItem value="sent">sent</SelectItem>
+                      <SelectItem value="paid">paid</SelectItem>
+                      <SelectItem value="overdue">overdue</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={String(rowsPerPage)} onValueChange={(value) => setRowsPerPage(Number(value))}>
+                    <SelectTrigger className="w-[110px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10 / page</SelectItem>
+                      <SelectItem value="25">25 / page</SelectItem>
+                      <SelectItem value="50">50 / page</SelectItem>
+                      <SelectItem value="100">100 / page</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="icon" variant={salesView === 'table' ? 'default' : 'outline'} onClick={() => setSalesView('table')}>
+                    <Table2 className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant={salesView === 'grid' ? 'default' : 'outline'} onClick={() => setSalesView('grid')}>
+                    <Grid3X3 className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              {activeTab === 'editor' ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <Label>Client</Label>
-                      <Input value={editor.client_name} onChange={(e) => setEditor((p) => ({ ...p, client_name: e.target.value }))} />
+
+              <Dialog open={newDocDialogOpen} onOpenChange={setNewDocDialogOpen}>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>{`Nouveau ${docTypeLabels[currentStage].toLowerCase()} client`}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                      <Label className="md:col-span-1">Client</Label>
+                      <div className="md:col-span-4">
+                        <Select value={newDocClientId} onValueChange={setNewDocClientId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choisir" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {contactsRows.clients.map((client) => (
+                              <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => { setNewDocDialogOpen(false); openClientCreation(); }}>
+                        + Nouveau
+                      </Button>
                     </div>
-                    <div>
-                      <Label>Email</Label>
-                      <Input value={editor.client_email} onChange={(e) => setEditor((p) => ({ ...p, client_email: e.target.value }))} />
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                      <Label className="md:col-span-1">Date</Label>
+                      <div className="md:col-span-2">
+                        <Input type="date" value={newDocIssueDate} onChange={(e) => setNewDocIssueDate(e.target.value)} />
+                      </div>
                     </div>
-                    <div>
-                      <Label>Téléphone</Label>
-                      <Input value={editor.client_phone} onChange={(e) => setEditor((p) => ({ ...p, client_phone: e.target.value }))} />
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <Button variant="outline" onClick={() => setNewDocDialogOpen(false)}>Annuler</Button>
+                      <Button onClick={handleQuickCreateDocument} disabled={!newDocClientId || createDoc.isPending}>Valider</Button>
                     </div>
-                    <div>
-                      <Label>Adresse</Label>
-                      <Input value={editor.client_address} onChange={(e) => setEditor((p) => ({ ...p, client_address: e.target.value }))} />
-                    </div>
-                    <div>
-                      <Label>Langue</Label>
-                      <Select
-                        value={editor.language}
-                        onValueChange={(value: FactLanguage) =>
-                          setEditor((p) => ({ ...p, language: value, direction: value === 'ar' ? 'rtl' : 'ltr' }))
-                        }
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              <div className="px-4 pb-4">
+                <div className="text-xs text-muted-foreground mb-2">
+                  {salesPagedDocs.length} / {filteredDocs.length} (page {salesPageSafe}/{salesTotalPages})
+                </div>
+                {salesView === 'table' ? (
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-sky-50 dark:bg-sky-900/20">
+                          <TableHead>Etat</TableHead>
+                        <TableHead>{stageUi.numberLabel}</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Client</TableHead>
+                          <TableHead className="text-right">Montant HT</TableHead>
+                          <TableHead className="text-right">Montant TTC</TableHead>
+                          <TableHead className="text-right">Solde</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {docsLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Chargement...</TableCell>
+                          </TableRow>
+                        ) : salesPagedDocs.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Aucun document.</TableCell>
+                          </TableRow>
+                        ) : (
+                          salesPagedDocs.map((doc) => (
+                            <TableRow
+                              key={doc.id}
+                              className={cn('cursor-pointer', selectedId === doc.id && 'bg-primary/5')}
+                              onClick={() => {
+                                navigate(`/facturation/${doc.id}`);
+                              }}
+                            >
+                              <TableCell>{getStatusBadge(doc)}</TableCell>
+                              <TableCell className="font-semibold text-sky-600">{doc.doc_number}</TableCell>
+                              <TableCell>{new Date(doc.issue_date).toLocaleDateString('fr-FR')}</TableCell>
+                              <TableCell>{doc.client_name}</TableCell>
+                              <TableCell className="text-right">{Number(doc.subtotal || 0).toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{Number(doc.total_amount || 0).toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{doc.status === 'paid' ? '0.00' : Number(doc.total_amount || 0).toFixed(2)}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {salesPagedDocs.map((doc) => (
+                      <Card
+                        key={doc.id}
+                        className={cn('cursor-pointer border', selectedId === doc.id && 'ring-2 ring-primary/40')}
+                        onClick={() => {
+                          navigate(`/facturation/${doc.id}`);
+                        }}
                       >
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm">{doc.doc_number}</CardTitle>
+                            {getStatusBadge(doc)}
+                          </div>
+                          <CardDescription>{new Date(doc.issue_date).toLocaleDateString('fr-FR')}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-1 text-sm">
+                          <div className="font-medium">{doc.client_name}</div>
+                          <div className="text-muted-foreground">HT: {Number(doc.subtotal || 0).toFixed(2)} MAD</div>
+                          <div className="text-muted-foreground">TTC: {Number(doc.total_amount || 0).toFixed(2)} MAD</div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <Button size="icon" variant="outline" onClick={() => setSalesPage((p) => Math.max(1, p - 1))} disabled={salesPageSafe <= 1}>
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <span className="text-xs text-muted-foreground px-2">Page {salesPageSafe}/{salesTotalPages}</span>
+                  <Button size="icon" variant="outline" onClick={() => setSalesPage((p) => Math.min(salesTotalPages, p + 1))} disabled={salesPageSafe >= salesTotalPages}>
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : mainModule === 'contacts' ? (
+            <div className="px-4 py-3 space-y-3">
+              <div className="inline-flex items-center gap-2 border border-slate-200 bg-white px-2 py-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={cn(
+                    'h-7 rounded-none border px-5 text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5',
+                    contactsTab === 'clients' ? 'bg-lime-500 border-lime-500 text-black hover:bg-lime-600' : 'bg-lime-100 border-lime-200 text-slate-700 hover:bg-lime-200'
+                  )}
+                  onClick={() => setContactsTab('clients')}
+                >
+                  Clients
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={cn(
+                    'h-7 rounded-none border px-5 text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5',
+                    contactsTab === 'suppliers' ? 'bg-lime-500 border-lime-500 text-black hover:bg-lime-600' : 'bg-lime-100 border-lime-200 text-slate-700 hover:bg-lime-200'
+                  )}
+                  onClick={() => setContactsTab('suppliers')}
+                >
+                  Fournisseurs
+                </Button>
+              </div>
+              <div className="flex items-center justify-between gap-2 flex-wrap border border-slate-200 bg-white px-3 py-2">
+                <h3 className="text-2xl font-medium tracking-tight">
+                  {contactsTab === 'suppliers' ? 'Fournisseurs' : 'Clients'}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="h-8 bg-sky-500 hover:bg-sky-600 rounded-sm text-xs font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-95"
+                    onClick={() => {
+                      if (contactsTab === 'suppliers') {
+                        openSupplierCreation();
+                      } else {
+                        openClientCreation();
+                      }
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    {contactsTab === 'suppliers' ? 'Ajouter Fournisseur' : 'Ajouter Client'}
+                  </Button>
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-2 top-2.5 text-muted-foreground" />
+                    <Input className="h-8 pl-8 w-[220px] rounded-sm" placeholder="Rechercher..." value={contactsSearch} onChange={(e) => setContactsSearch(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+              {clientFormOpen && contactsTab === 'clients' && (
+                <Card className="border-sky-300">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Nouveau Client</CardTitle>
+                    <CardDescription>Ajout rapide depuis Facturation</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center gap-6">
+                      <Label className="font-medium">Type</Label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" checked={newClientType === 'societe'} onChange={() => setNewClientType('societe')} />
+                        Société
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" checked={newClientType === 'particulier'} onChange={() => setNewClientType('particulier')} />
+                        Particulier
+                      </label>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label>Nom</Label>
+                      <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} placeholder="Nom" />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <Label className="font-semibold">Adresse de facturation</Label>
+                        <div className="space-y-1">
+                          <Label>Adresse</Label>
+                          <Input value={newClientAddress} onChange={(e) => setNewClientAddress(e.target.value)} placeholder="Adresse" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label>CP</Label>
+                            <Input value={newClientPostalCode} onChange={(e) => setNewClientPostalCode(e.target.value)} placeholder="CP" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Ville</Label>
+                            <Input value={newClientCity} onChange={(e) => setNewClientCity(e.target.value)} placeholder="Ville" />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Pays</Label>
+                          <Input value={newClientCountry} onChange={(e) => setNewClientCountry(e.target.value)} placeholder="Pays" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Code ICE</Label>
+                          <Input value={newClientIce} onChange={(e) => setNewClientIce(e.target.value)} placeholder="Code ICE" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label>Code IF</Label>
+                            <Input value={newClientIf} onChange={(e) => setNewClientIf(e.target.value)} placeholder="Code IF" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>RC</Label>
+                            <Input value={newClientRc} onChange={(e) => setNewClientRc(e.target.value)} placeholder="RC" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <Label className="font-semibold">Informations société</Label>
+                        <div className="space-y-1">
+                          <Label>Date Création</Label>
+                          <Input type="date" value={newClientCreatedDate} onChange={(e) => setNewClientCreatedDate(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Téléphone</Label>
+                          <Input value={newClientPhone} onChange={(e) => setNewClientPhone(e.target.value)} placeholder="+212 ..." />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>GSM</Label>
+                          <Input value={newClientGsm} onChange={(e) => setNewClientGsm(e.target.value)} placeholder="+212 ..." />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Fax</Label>
+                          <Input value={newClientFax} onChange={(e) => setNewClientFax(e.target.value)} placeholder="Fax" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Email</Label>
+                          <Input value={newClientEmail} onChange={(e) => setNewClientEmail(e.target.value)} placeholder="email@client.com" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Site Web</Label>
+                          <Input value={newClientWebsite} onChange={(e) => setNewClientWebsite(e.target.value)} placeholder="https://..." />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 justify-end">
+                      <Button variant="outline" onClick={() => setClientFormOpen(false)}>Annuler</Button>
+                      <Button onClick={handleCreateClient}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {supplierFormOpen && contactsTab === 'suppliers' && (
+                <Card className="border-sky-300">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Nouveau Fournisseur</CardTitle>
+                    <CardDescription>Ajout rapide depuis Facturation</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center gap-6">
+                      <Label className="font-medium">Type</Label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" checked={newSupplierType === 'societe'} onChange={() => setNewSupplierType('societe')} />
+                        Société
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" checked={newSupplierType === 'particulier'} onChange={() => setNewSupplierType('particulier')} />
+                        Particulier
+                      </label>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label>Nom</Label>
+                      <Input value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="Nom" />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <Label className="font-semibold">Adresse de facturation</Label>
+                        <div className="space-y-1">
+                          <Label>Adresse</Label>
+                          <Input value={newSupplierAddress} onChange={(e) => setNewSupplierAddress(e.target.value)} placeholder="Adresse" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label>CP</Label>
+                            <Input value={newSupplierPostalCode} onChange={(e) => setNewSupplierPostalCode(e.target.value)} placeholder="CP" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Ville</Label>
+                            <Input value={newSupplierCity} onChange={(e) => setNewSupplierCity(e.target.value)} placeholder="Ville" />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Pays</Label>
+                          <Input value={newSupplierCountry} onChange={(e) => setNewSupplierCountry(e.target.value)} placeholder="Pays" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Code ICE</Label>
+                          <Input value={newSupplierIce} onChange={(e) => setNewSupplierIce(e.target.value)} placeholder="Code ICE" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label>Code IF</Label>
+                            <Input value={newSupplierIf} onChange={(e) => setNewSupplierIf(e.target.value)} placeholder="Code IF" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>RC</Label>
+                            <Input value={newSupplierRc} onChange={(e) => setNewSupplierRc(e.target.value)} placeholder="RC" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <Label className="font-semibold">Informations société</Label>
+                        <div className="space-y-1">
+                          <Label>Date Création</Label>
+                          <Input type="date" value={newSupplierCreatedDate} onChange={(e) => setNewSupplierCreatedDate(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Téléphone</Label>
+                          <Input value={newSupplierPhone} onChange={(e) => setNewSupplierPhone(e.target.value)} placeholder="+212 ..." />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>GSM</Label>
+                          <Input value={newSupplierGsm} onChange={(e) => setNewSupplierGsm(e.target.value)} placeholder="+212 ..." />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Fax</Label>
+                          <Input value={newSupplierFax} onChange={(e) => setNewSupplierFax(e.target.value)} placeholder="Fax" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Email</Label>
+                          <Input value={newSupplierEmail} onChange={(e) => setNewSupplierEmail(e.target.value)} placeholder="email@supplier.com" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Site Web</Label>
+                          <Input value={newSupplierWebsite} onChange={(e) => setNewSupplierWebsite(e.target.value)} placeholder="https://..." />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 justify-end">
+                      <Button variant="outline" onClick={() => setSupplierFormOpen(false)}>Annuler</Button>
+                      <Button onClick={handleCreateSupplier}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              <div className="border border-slate-700 rounded-sm overflow-hidden bg-slate-900/60 text-slate-100 [&_th]:text-slate-200 [&_td]:text-slate-100 [&_tr]:border-slate-700">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nom</TableHead>
+                      <TableHead>Ville</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Téléphone</TableHead>
+                      {contactsTab === 'clients' && <TableHead className="text-right">Total</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {contactsFiltered.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={contactsTab === 'clients' ? 5 : 4} className="text-center py-8 text-muted-foreground">Aucun résultat trouvé.</TableCell>
+                      </TableRow>
+                    ) : (
+                      contactsFiltered.map((row) => (
+                        <TableRow key={(row as { id: string }).id}>
+                          <TableCell>{(row as { name: string }).name}</TableCell>
+                          <TableCell>{(row as { city: string }).city}</TableCell>
+                          <TableCell>{(row as { email: string }).email}</TableCell>
+                          <TableCell>{(row as { phone: string }).phone}</TableCell>
+                          {contactsTab === 'clients' && (
+                            <TableCell className="text-right">{Number((row as { total?: number }).total || 0).toFixed(2)} MAD</TableCell>
+                          )}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          ) : mainModule === 'home' ? (
+            <div className="px-4 py-4 space-y-4">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                <Card className="xl:col-span-2 border-sky-200">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Démarrez vos ventes</CardTitle>
+                    <CardDescription>Suivez les étapes</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button className="rounded-md border p-3 text-center hover:bg-muted/30" onClick={() => navigate('/societe')}><Building2 className="w-5 h-5 mx-auto mb-2 text-sky-600" /><div className="text-xs font-medium">Données de l’entreprise</div></button>
+                    <button className="rounded-md border p-3 text-center hover:bg-muted/30" onClick={openClientCreation}><Users2 className="w-5 h-5 mx-auto mb-2 text-sky-600" /><div className="text-xs font-medium">Créer un client</div></button>
+                    <button className="rounded-md border p-3 text-center hover:bg-muted/30" onClick={() => { setMainModule('sales'); setCurrentStage('devis'); }}><FileDown className="w-5 h-5 mx-auto mb-2 text-sky-600" /><div className="text-xs font-medium">Proposer un devis</div></button>
+                    <button className="rounded-md border p-3 text-center hover:bg-muted/30" onClick={() => { setMainModule('sales'); setCurrentStage('facture'); handleNew('facture'); }}><CheckCircle2 className="w-5 h-5 mx-auto mb-2 text-sky-600" /><div className="text-xs font-medium">Créer une facture</div></button>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-base">Activité du mois</CardTitle></CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div className="flex justify-between"><span>Devis en cours</span><span className="font-semibold">{docs.filter((d) => d.doc_type === 'devis').length}</span></div>
+                    <div className="flex justify-between"><span>Factures émises</span><span className="font-semibold">{docs.filter((d) => d.doc_type === 'facture').length}</span></div>
+                    <div className="flex justify-between"><span>CA du mois</span><span className="font-semibold">{(stats?.pending_devis_amount || 0).toFixed(2)} MAD</span></div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Devis clients émis</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{docs.filter((d) => d.doc_type === 'devis').length}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Factures non réglées</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{stats?.unpaid_invoices_count || 0}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Commandes ouvertes</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{docs.filter((d) => d.doc_type === 'bon_commande').length}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Livraisons</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{docs.filter((d) => d.doc_type === 'bon_livraison').length}</CardContent></Card>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Tâches / Actions</CardTitle></CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    <div className="flex items-center gap-2"><ListChecks className="w-4 h-4 text-amber-500" /><span>Relancer 3 clients impayés</span></div>
+                    <div className="flex items-center gap-2"><ListChecks className="w-4 h-4 text-sky-500" /><span>Valider 2 devis à envoyer</span></div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Situation ventes HT</CardTitle></CardHeader>
+                  <CardContent className="flex items-center gap-3 text-sm">
+                    <Activity className="w-10 h-10 text-sky-500" />
+                    <div>
+                      <div>DV/BC/FA ce mois</div>
+                      <div className="font-semibold">{docs.length} documents</div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Calendrier</CardTitle></CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Button size="icon" variant="ghost" onClick={() => setHomeMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>
+                        <ChevronLeft className="w-4 h-4" />
+                      </Button>
+                      <div className="font-semibold capitalize">{homeCalendar.monthLabel}</div>
+                      <Button size="icon" variant="ghost" onClick={() => setHomeMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 text-[10px] text-center text-muted-foreground">
+                      {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, idx) => <div key={`${d}-${idx}`}>{d}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {homeCalendar.cells.map((cell, idx) => (
+                        <div
+                          key={`cal-${idx}`}
+                          className={cn(
+                            'h-7 rounded border text-[10px] flex items-center justify-center',
+                            !cell.day && 'border-transparent',
+                            cell.overdueCount && cell.overdueCount > 0 && 'bg-red-100 text-red-700 border-red-300'
+                          )}
+                        >
+                          {cell.day || ''}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{docs.filter((d) => d.status === 'overdue').length} échéances en retard</div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : mainModule === 'purchases' ? (
+            <div className="px-4 py-4 space-y-4 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Fournisseurs actifs</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{(achatsSuppliersQ.data || []).length}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Bons de commande</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{purchasesRows.length}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Factures fournisseurs</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{supplierInvoicesRows.length}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Montant achats</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{(purchasesRows.reduce((acc, r) => acc + r.amount, 0) + supplierInvoicesRows.reduce((acc, r) => acc + r.amount, 0)).toFixed(2)} MAD</CardContent></Card>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant={achatsTab === 'orders' ? 'default' : 'outline'} className="transition-all duration-200 hover:-translate-y-0.5" onClick={() => setAchatsTab('orders')}>Commandes</Button>
+                <Button size="sm" variant={achatsTab === 'invoices' ? 'default' : 'outline'} className="transition-all duration-200 hover:-translate-y-0.5" onClick={() => setAchatsTab('invoices')}>Factures fournisseurs</Button>
+              </div>
+
+              {achatsTab === 'orders' ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Nouveau Bon de commande fournisseur</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                    <Select value={newPurchaseSupplierId} onValueChange={setNewPurchaseSupplierId}>
+                      <SelectTrigger><SelectValue placeholder="Choisir fournisseur" /></SelectTrigger>
+                      <SelectContent>
+                        {(achatsSuppliersQ.data || []).map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.legal_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input type="number" placeholder="Montant HT" value={newPurchaseAmount} onChange={(e) => setNewPurchaseAmount(e.target.value)} />
+                    <Button className="transition-all duration-200 hover:scale-[1.02] active:scale-95" onClick={handleCreatePurchaseOrderQuick} disabled={createPurchaseOrder.isPending}>Créer BC</Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Nouvelle Facture fournisseur</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                    <Select value={newInvoiceSupplierId} onValueChange={setNewInvoiceSupplierId}>
+                      <SelectTrigger><SelectValue placeholder="Choisir fournisseur" /></SelectTrigger>
+                      <SelectContent>
+                        {(achatsSuppliersQ.data || []).map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.legal_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input type="number" placeholder="Montant HT" value={newInvoiceAmount} onChange={(e) => setNewInvoiceAmount(e.target.value)} />
+                    <Button className="transition-all duration-200 hover:scale-[1.02] active:scale-95" onClick={handleCreateSupplierInvoiceQuick} disabled={createSupplierInvoice.isPending}>Créer facture</Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input className="w-[260px]" placeholder="Rechercher référence / fournisseur..." value={achatsSearch} onChange={(e) => setAchatsSearch(e.target.value)} />
+                <Select value={achatsStatusFilter} onValueChange={setAchatsStatusFilter}>
+                  <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous statuts</SelectItem>
+                    <SelectItem value="draft">draft</SelectItem>
+                    <SelectItem value="sent">sent</SelectItem>
+                    <SelectItem value="approved">approved</SelectItem>
+                    <SelectItem value="paid">paid</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground">{achatsPagedRows.length} / {achatsFilteredRows.length}</span>
+              </div>
+
+              <div className="border border-slate-700 rounded-md overflow-hidden bg-slate-900/60 text-slate-100 [&_th]:text-slate-200 [&_td]:text-slate-100 [&_tr]:border-slate-700">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Référence</TableHead>
+                      <TableHead>Fournisseur</TableHead>
+                      <TableHead>Date</TableHead>
+                      {achatsTab === 'invoices' && <TableHead>Échéance</TableHead>}
+                      <TableHead className="text-right">Montant</TableHead>
+                      <TableHead>Statut</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {achatsPagedRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={achatsTab === 'orders' ? 6 : 7} className="text-center py-8 text-muted-foreground">Aucune donnée achats.</TableCell></TableRow>
+                    ) : (
+                      achatsPagedRows.map((row) => (
+                        <TableRow key={row.id} className="hover:bg-muted/20 transition-colors">
+                          <TableCell>{row.ref}</TableCell>
+                          <TableCell>{row.supplier}</TableCell>
+                          <TableCell>{new Date(row.date).toLocaleDateString('fr-FR')}</TableCell>
+                          {achatsTab === 'invoices' && <TableCell>{row.dueDate ? new Date(row.dueDate).toLocaleDateString('fr-FR') : '-'}</TableCell>}
+                          <TableCell className="text-right">{row.amount.toFixed(2)} MAD</TableCell>
+                          <TableCell><Badge variant="outline">{row.status}</Badge></TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  achatsTab === 'orders'
+                                    ? handleAdvancePurchaseOrderStatus(row.id, row.status)
+                                    : handleAdvanceSupplierInvoiceStatus(row.id, row.status)
+                                }
+                              >
+                                Next
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  achatsTab === 'orders'
+                                    ? handleArchivePurchaseOrder(row.id)
+                                    : handleArchiveSupplierInvoice(row.id)
+                                }
+                              >
+                                Archiver
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button size="icon" variant="outline" onClick={() => setAchatsPage((p) => Math.max(1, p - 1))} disabled={achatsPageSafe <= 1}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground">Page {achatsPageSafe}/{achatsTotalPages}</span>
+                <Button size="icon" variant="outline" onClick={() => setAchatsPage((p) => Math.min(achatsTotalPages, p + 1))} disabled={achatsPageSafe >= achatsTotalPages}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          ) : mainModule === 'catalog' ? (
+            <div className="px-4 py-4 space-y-4 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Articles</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{catalogRows.length}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Valeur stock</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{catalogRows.reduce((acc, i) => acc + Number((i as StockItem).unit_price || 0) * Number((i as StockItem).quantity || 0), 0).toFixed(2)} MAD</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Stock faible</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{catalogRows.filter((i) => Number((i as StockItem).quantity || 0) <= Number((i as StockItem).min_quantity || 0)).length}</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Dernière MAJ</CardTitle></CardHeader><CardContent className="text-sm font-semibold">{new Date().toLocaleDateString('fr-FR')}</CardContent></Card>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Nouveau produit / service</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                  <Input placeholder="Nom" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} />
+                  <Input placeholder="Catégorie" value={newProductCategory} onChange={(e) => setNewProductCategory(e.target.value)} />
+                  <Input placeholder="Unité" value={newProductUnit} onChange={(e) => setNewProductUnit(e.target.value)} />
+                  <Input placeholder="Prix" type="number" value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} />
+                  <Input placeholder="Stock initial" type="number" value={newProductStock} onChange={(e) => setNewProductStock(e.target.value)} />
+                  <Button className="transition-all duration-200 hover:scale-[1.02] active:scale-95" onClick={handleAddCatalogItem} disabled={createCatalogItem.isPending}>
+                    <PackagePlus className="w-4 h-4 mr-1" />
+                    Ajouter
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input className="w-[260px]" placeholder="Rechercher article..." value={catalogSearch} onChange={(e) => setCatalogSearch(e.target.value)} />
+                <Select value={catalogCategoryFilter} onValueChange={setCatalogCategoryFilter}>
+                  <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes catégories</SelectItem>
+                    <SelectItem value="Service">Service</SelectItem>
+                    <SelectItem value="Produit">Produit</SelectItem>
+                    <SelectItem value="Pièce">Pièce</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground">{catalogPagedRows.length} / {catalogFilteredRows.length}</span>
+              </div>
+
+              <div className="border border-slate-700 rounded-md overflow-hidden bg-slate-900/60 text-slate-100 [&_th]:text-slate-200 [&_td]:text-slate-100 [&_tr]:border-slate-700">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Article</TableHead>
+                      <TableHead>Catégorie</TableHead>
+                      <TableHead>Unité</TableHead>
+                      <TableHead className="text-right">Prix</TableHead>
+                      <TableHead className="text-right">Stock</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {catalogPagedRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Aucun article.</TableCell></TableRow>
+                    ) : (
+                      catalogPagedRows.map((item) => (
+                        <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
+                          <TableCell>{(item as StockItem).name}</TableCell>
+                          <TableCell>{(item as StockItem).category}</TableCell>
+                          <TableCell>{(item as StockItem).unit}</TableCell>
+                          <TableCell className="text-right">{Number((item as StockItem).unit_price || 0).toFixed(2)} MAD</TableCell>
+                          <TableCell className="text-right">{Number((item as StockItem).quantity || 0)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  updateCatalogItem.mutate({
+                                    id: item.id,
+                                    updates: { quantity: Number((item as StockItem).quantity || 0) + 1 },
+                                  })
+                                }
+                              >
+                                +1
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  updateCatalogItem.mutate({
+                                    id: item.id,
+                                    updates: { quantity: Math.max(0, Number((item as StockItem).quantity || 0) - 1) },
+                                  })
+                                }
+                              >
+                                -1
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => deleteCatalogItem.mutate(item.id)}>
+                                Suppr.
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button size="icon" variant="outline" onClick={() => setCatalogPage((p) => Math.max(1, p - 1))} disabled={catalogPageSafe <= 1}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground">Page {catalogPageSafe}/{catalogTotalPages}</span>
+                <Button size="icon" variant="outline" onClick={() => setCatalogPage((p) => Math.min(catalogTotalPages, p + 1))} disabled={catalogPageSafe >= catalogTotalPages}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="px-4 py-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CA Facturé</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{analyticsSummary.revenue.toFixed(2)} MAD</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Taux conversion</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{analyticsSummary.conversionRate.toFixed(1)}%</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Impayés</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{analyticsSummary.overdue.toFixed(2)} MAD</CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Panier moyen</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{analyticsSummary.averageTicket.toFixed(2)} MAD</CardContent></Card>
+              </div>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Top clients (Poids CA)</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {clientsSummary.slice(0, 8).map((c) => {
+                    const percent = analyticsSummary.revenue > 0 ? (c.total / analyticsSummary.revenue) * 100 : 0;
+                    return (
+                      <div key={c.client}>
+                        <div className="flex justify-between text-xs">
+                          <span>{c.client}</span>
+                          <span>{c.total.toFixed(2)} MAD</span>
+                        </div>
+                        <div className="h-2 rounded bg-muted mt-1">
+                          <div className="h-2 rounded bg-sky-500" style={{ width: `${Math.min(percent, 100)}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </Card>
+
+        {false && mainModule === 'sales' && editorOpen && (
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+            <Card className="xl:col-span-8">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <CardTitle>Éditeur</CardTitle>
+                    <CardDescription>{editor.id ? 'Modification document' : 'Nouveau document'}</CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button variant={activeTab === 'editor' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('editor')}>Édition</Button>
+                    <Button variant={activeTab === 'preview' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('preview')}><Eye className="w-4 h-4 mr-1" />Preview</Button>
+                    <Button size="sm" onClick={handleSave} disabled={createDoc.isPending || updateDoc.isPending || replaceItems.isPending}>Enregistrer</Button>
+                    <Button size="sm" variant="outline" onClick={handleConvert} disabled={!editor.id || !nextTypeMap[editor.doc_type] || convertDoc.isPending}><ArrowRightLeft className="w-4 h-4 mr-1" />Convertir</Button>
+                    <Button size="sm" variant="outline" onClick={exportPreview}><FileDown className="w-4 h-4 mr-1" />PDF</Button>
+                    <Button size="sm" variant="outline" onClick={handleSendEmail} disabled={!editor.id || !editor.client_email || sendEmail.isPending}><Mail className="w-4 h-4 mr-1" />Email</Button>
+                    <Button size="sm" variant="outline" onClick={handleSendWhatsApp} disabled={!editor.id || !editor.client_phone || sendWhatsApp.isPending}><MessageCircle className="w-4 h-4 mr-1" />WhatsApp</Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {activeTab === 'editor' ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <Input value={editor.client_name} onChange={(e) => setEditor((p) => ({ ...p, client_name: e.target.value }))} placeholder="Client" />
+                      <Input value={editor.client_email} onChange={(e) => setEditor((p) => ({ ...p, client_email: e.target.value }))} placeholder="Email" />
+                      <Input value={editor.client_phone} onChange={(e) => setEditor((p) => ({ ...p, client_phone: e.target.value }))} placeholder="Téléphone" />
+                    </div>
+                    <Textarea value={editor.client_address} onChange={(e) => setEditor((p) => ({ ...p, client_address: e.target.value }))} placeholder="Adresse" rows={2} />
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      <Select value={editor.language} onValueChange={(value: FactLanguage) => setEditor((p) => ({ ...p, language: value, direction: value === 'ar' ? 'rtl' : 'ltr' }))}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="fr">Français</SelectItem>
                           <SelectItem value="ar">العربية</SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div>
-                      <Label>Template</Label>
                       <Select value={editor.template_type} onValueChange={(value: FactTemplateType) => setEditor((p) => ({ ...p, template_type: value }))}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -580,79 +1970,31 @@ export default function Facturation() {
                           <SelectItem value="creative">Creative</SelectItem>
                         </SelectContent>
                       </Select>
+                      <Input type="number" value={editor.tax_rate} onChange={(e) => setEditor((p) => ({ ...p, tax_rate: Number(e.target.value || 0) }))} placeholder="TVA %" />
+                      <Input type="number" value={editor.discount_amount} onChange={(e) => setEditor((p) => ({ ...p, discount_amount: Number(e.target.value || 0) }))} placeholder="Remise" />
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2"><Switch checked={editor.show_header} onCheckedChange={(checked) => setEditor((p) => ({ ...p, show_header: checked }))} /><span className="text-xs">Header</span></div>
+                        <div className="flex items-center gap-2"><Switch checked={editor.show_footer} onCheckedChange={(checked) => setEditor((p) => ({ ...p, show_footer: checked }))} /><span className="text-xs">Footer</span></div>
+                      </div>
                     </div>
-                    <div>
-                      <Label>Taux TVA (%)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={editor.tax_rate}
-                        onChange={(e) => setEditor((p) => ({ ...p, tax_rate: Number(e.target.value || 0) }))}
-                      />
-                    </div>
-                    <div>
-                      <Label>Remise globale (MAD)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={editor.discount_amount}
-                        onChange={(e) => setEditor((p) => ({ ...p, discount_amount: Number(e.target.value || 0) }))}
-                      />
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                      <Switch checked={editor.show_header} onCheckedChange={(checked) => setEditor((p) => ({ ...p, show_header: checked }))} />
-                      <Label>Afficher Header</Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Switch checked={editor.show_footer} onCheckedChange={(checked) => setEditor((p) => ({ ...p, show_footer: checked }))} />
-                      <Label>Afficher Footer</Label>
-                    </div>
-                  </div>
+                    <Separator />
 
-                  <Separator />
-
-                  <div className="space-y-2">
-                    <Label>Dynamic Fields</Label>
                     <div className="flex gap-2">
-                      <Input value={customColumnDraft} onChange={(e) => setCustomColumnDraft(e.target.value)} placeholder="Ex: Numéro Série, Garantie..." />
+                      <Input value={customColumnDraft} onChange={(e) => setCustomColumnDraft(e.target.value)} placeholder="Ajouter colonne dynamique..." />
                       <Button type="button" variant="outline" onClick={addCustomColumn}>Ajouter</Button>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {editor.custom_columns.map((name) => (
-                        <Badge key={name} variant="secondary" className="gap-2">
-                          {name}
-                          <button onClick={() => removeCustomColumn(name)} className="text-xs">×</button>
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
 
-                  <Separator />
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label>Lignes</Label>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setEditor((p) => ({ ...p, items: [...p.items, defaultItem()] }))}>
-                        <Plus className="w-4 h-4 mr-1" />
-                        Ajouter ligne
-                      </Button>
-                    </div>
                     <div className="space-y-2">
                       {editor.items.map((item, idx) => (
-                        <Card key={`line-${idx}`} className="p-3">
-                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
-                            <Input className="md:col-span-4" value={String(item.description || '')} placeholder="Description" onChange={(e) => updateItem(idx, { description: e.target.value })} />
-                            <Input className="md:col-span-2" type="number" value={Number(item.quantity || 0)} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })} />
-                            <Input className="md:col-span-2" value={String(item.unit || 'u')} onChange={(e) => updateItem(idx, { unit: e.target.value })} />
-                            <Input className="md:col-span-2" type="number" value={Number(item.unit_price || 0)} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value || 0) })} />
-                            <Input className="md:col-span-1" type="number" value={Number(item.discount_rate || 0)} onChange={(e) => updateItem(idx, { discount_rate: Number(e.target.value || 0) })} />
-                            <Button className="md:col-span-1" type="button" variant="ghost" onClick={() => setEditor((p) => ({ ...p, items: p.items.filter((_, i) => i !== idx) }))}>×</Button>
-                          </div>
+                        <div key={`line-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                          <Input className="md:col-span-5" value={String(item.description || '')} placeholder="Description" onChange={(e) => updateItem(idx, { description: e.target.value })} />
+                          <Input className="md:col-span-2" type="number" value={Number(item.quantity || 0)} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })} />
+                          <Input className="md:col-span-2" type="number" value={Number(item.unit_price || 0)} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value || 0) })} />
+                          <Input className="md:col-span-2" type="number" value={Number(item.discount_rate || 0)} onChange={(e) => updateItem(idx, { discount_rate: Number(e.target.value || 0) })} />
+                          <Button className="md:col-span-1" type="button" variant="ghost" onClick={() => setEditor((p) => ({ ...p, items: p.items.filter((_, i) => i !== idx) }))}>×</Button>
                           {editor.custom_columns.length > 0 && (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                            <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-2">
                               {editor.custom_columns.map((col) => (
                                 <Input
                                   key={`${idx}-${col}`}
@@ -663,147 +2005,90 @@ export default function Facturation() {
                               ))}
                             </div>
                           )}
-                        </Card>
+                        </div>
                       ))}
                     </div>
-                  </div>
 
-                  <div>
-                    <Label>Notes</Label>
-                    <Textarea value={editor.notes} onChange={(e) => setEditor((p) => ({ ...p, notes: e.target.value }))} rows={3} />
+                    <Button type="button" variant="outline" size="sm" onClick={() => setEditor((p) => ({ ...p, items: [...p.items, defaultItem()] }))}>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Ajouter ligne
+                    </Button>
                   </div>
-                </div>
-              ) : (
-                <div className={cn('rounded-lg p-4 min-h-[560px] transition-all', templateClassMap[editor.template_type], editor.direction === 'rtl' && 'text-right')} dir={editor.direction}>
-                  {editor.show_header && (
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div>
-                        <div className="text-xl font-bold">{company?.company_name || 'Société'}</div>
-                        <div className="text-xs opacity-80">{company?.address || '-'}</div>
-                        <div className="text-xs opacity-80">{company?.contact_phone || '-'} · {company?.contact_email || '-'}</div>
-                        <div className="text-xs opacity-80">{company?.tax_info || '-'}</div>
+                ) : (
+                  <div className={cn('rounded-lg p-4 min-h-[380px] transition-all', templateClassMap[editor.template_type], editor.direction === 'rtl' && 'text-right')} dir={editor.direction}>
+                    {editor.show_header && (
+                      <div className="flex items-start justify-between gap-4 mb-4">
+                        <div>
+                          <div className="text-xl font-bold">{company?.company_name || 'Société'}</div>
+                          <div className="text-xs opacity-80">{company?.address || '-'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold uppercase">{editor.doc_type.replace('_', ' ')}</div>
+                          <div className="text-xs">{editor.issue_date}</div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-semibold uppercase">{editor.doc_type.replace('_', ' ')}</div>
-                        <div className="text-xs">{editor.issue_date}</div>
+                    )}
+                    <div className="mb-3 text-sm">
+                      <div className="font-semibold">{editor.client_name || 'Client'}</div>
+                      <div className="opacity-80">{editor.client_address || '-'}</div>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Description</TableHead>
+                          <TableHead className="text-right">Qté</TableHead>
+                          <TableHead className="text-right">PU</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {editor.items.map((it, idx) => {
+                          const total = Number(it.quantity || 0) * Number(it.unit_price || 0) * (1 - Number(it.discount_rate || 0) / 100);
+                          return (
+                            <TableRow key={`pv-${idx}`}>
+                              <TableCell>{it.description || '-'}</TableCell>
+                              <TableCell className="text-right">{Number(it.quantity || 0).toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{Number(it.unit_price || 0).toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{total.toFixed(2)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                    <div className="mt-4 ml-auto max-w-sm space-y-1 text-sm">
+                      <div className="flex justify-between"><span>Sous-total</span><span>{previewTotals.subtotal.toFixed(2)} MAD</span></div>
+                      <div className="flex justify-between"><span>TVA</span><span>{previewTotals.tax.toFixed(2)} MAD</span></div>
+                      <div className="flex justify-between"><span>Remise</span><span>- {Number(editor.discount_amount || 0).toFixed(2)} MAD</span></div>
+                      <div className="flex justify-between font-bold text-base border-t pt-2"><span>Total</span><span>{previewTotals.total.toFixed(2)} MAD</span></div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="xl:col-span-4">
+              <CardHeader>
+                <CardTitle>Timeline</CardTitle>
+                <CardDescription>Suivi des transformations</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 max-h-[540px] overflow-auto">
+                {timeline.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Aucun événement.</div>
+                ) : (
+                  timeline.map((ev) => (
+                    <div key={ev.id} className="border rounded-md p-3">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                        <div className="text-sm font-medium">{ev.event_label}</div>
                       </div>
+                      <div className="text-xs text-muted-foreground mt-1">{new Date(ev.created_at).toLocaleString('fr-FR')}</div>
                     </div>
-                  )}
-                  <div className="mb-3">
-                    <div className="font-semibold">{editor.client_name || 'Client'}</div>
-                    <div className="text-xs opacity-80">{editor.client_address || '-'}</div>
-                  </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Qté</TableHead>
-                        <TableHead className="text-right">PU</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {editor.items.map((it, idx) => {
-                        const total = Number(it.quantity || 0) * Number(it.unit_price || 0) * (1 - Number(it.discount_rate || 0) / 100);
-                        return (
-                          <TableRow key={`pv-${idx}`}>
-                            <TableCell>
-                              <div>{it.description || '-'}</div>
-                              {editor.custom_columns.length > 0 && (
-                                <div className="text-[11px] opacity-70 mt-1">
-                                  {editor.custom_columns
-                                    .map((c) => `${c}: ${((it.extra_fields as Record<string, string> | undefined)?.[c]) || '-'}`)
-                                    .join(' · ')}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">{Number(it.quantity || 0).toFixed(2)}</TableCell>
-                            <TableCell className="text-right">{Number(it.unit_price || 0).toFixed(2)}</TableCell>
-                            <TableCell className="text-right">{total.toFixed(2)}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                  <div className="mt-4 ml-auto max-w-sm space-y-1 text-sm">
-                    <div className="flex justify-between"><span>Sous-total</span><span>{previewTotals.subtotal.toFixed(2)} MAD</span></div>
-                    <div className="flex justify-between"><span>TVA</span><span>{previewTotals.tax.toFixed(2)} MAD</span></div>
-                    <div className="flex justify-between"><span>Remise</span><span>- {Number(editor.discount_amount || 0).toFixed(2)} MAD</span></div>
-                    <div className="flex justify-between font-bold text-base border-t pt-2"><span>Total</span><span>{previewTotals.total.toFixed(2)} MAD</span></div>
-                  </div>
-                  {editor.show_footer && (
-                    <div className="mt-6 text-xs opacity-80">
-                      <div>{editor.notes || 'Merci pour votre confiance.'}</div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="xl:col-span-3">
-            <CardHeader>
-              <CardTitle>Timeline</CardTitle>
-              <CardDescription>Suivi des états et transformations</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 max-h-[660px] overflow-auto">
-              {timeline.length === 0 ? (
-                <div className="text-sm text-muted-foreground">Aucun événement.</div>
-              ) : (
-                timeline.map((ev) => (
-                  <div key={ev.id} className="border rounded-md p-3">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-3.5 h-3.5 text-primary" />
-                      <div className="text-sm font-medium">{ev.event_label}</div>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">{new Date(ev.created_at).toLocaleString('fr-FR')}</div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Parcours Documents</CardTitle>
-            <CardDescription>Cycle conseillé et flexible</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="flow">
-              <TabsList>
-                <TabsTrigger value="flow"><FileText className="w-4 h-4 mr-1" />Document Flow</TabsTrigger>
-                <TabsTrigger value="templates"><Eye className="w-4 h-4 mr-1" />Templates</TabsTrigger>
-              </TabsList>
-              <TabsContent value="flow" className="pt-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  {(['devis', 'bon_commande', 'bon_livraison', 'facture'] as FactDocumentType[]).map((t) => (
-                    <Card key={t} className="p-3">
-                      <div className="font-semibold capitalize">{t.replace('_', ' ')}</div>
-                      <div className="text-xs text-muted-foreground mt-1">Démarrage direct possible</div>
-                      <Button size="sm" variant="outline" className="mt-3 w-full" onClick={() => handleNew(t)}>
-                        Créer {t.replace('_', ' ')}
-                      </Button>
-                    </Card>
-                  ))}
-                </div>
-              </TabsContent>
-              <TabsContent value="templates" className="pt-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  {(['classic', 'modern', 'minimalist', 'creative'] as FactTemplateType[]).map((tpl) => (
-                    <Card key={tpl} className={cn('p-3', templateClassMap[tpl])}>
-                      <div className="font-semibold capitalize">{tpl}</div>
-                      <div className="text-xs mt-1 opacity-80">Preview instantané disponible</div>
-                      <Button size="sm" className="mt-3 w-full" onClick={() => setEditor((p) => ({ ...p, template_type: tpl }))}>
-                        Utiliser
-                      </Button>
-                    </Card>
-                  ))}
-                </div>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

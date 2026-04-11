@@ -38,6 +38,7 @@ import Citerne from "./pages/Citerne";
 import Reports from "./pages/Reports";
 import Societe from "./pages/Societe";
 import Facturation from "./pages/Facturation";
+import FacturationDetail from "./pages/FacturationDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -78,6 +79,7 @@ const App = () => (
           <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
           <Route path="/societe" element={<ProtectedRoute><Societe /></ProtectedRoute>} />
           <Route path="/facturation" element={<ProtectedRoute><Facturation /></ProtectedRoute>} />
+          <Route path="/facturation/:documentId" element={<ProtectedRoute><FacturationDetail /></ProtectedRoute>} />
           <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
