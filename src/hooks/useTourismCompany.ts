@@ -108,9 +108,25 @@ export function useUpsertTourismCompanyProfile() {
         .upsert(dataToUpsert, { onConflict: 'id' })
         .select()
         .maybeSingle();
-        
-      if (error) throw error;
-      return data as TourismCompanyProfile | null;
+
+      // Some environments enforce RLS on tourism_company_profile.
+      // In this case, app_settings already stores the profile and remains the source of truth.
+      if (error) {
+        const isRlsError =
+          (error as { code?: string }).code === '42501' ||
+          /row-level security|permission denied|violates/i.test(error.message || '');
+        if (!isRlsError) throw error;
+      }
+
+      const fromTable = data as TourismCompanyProfile | null;
+      if (fromTable) return fromTable;
+
+      const { data: settingsData } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', COMPANY_PROFILE_SETTINGS_KEY)
+        .maybeSingle();
+      return normalizeProfile(settingsData?.value);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tourism-company-profile'] });

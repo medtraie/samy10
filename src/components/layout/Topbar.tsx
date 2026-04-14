@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Bell, Search, Globe } from 'lucide-react';
+import { Bell, Search, Globe, Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,12 +12,14 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useTheme } from '@/components/theme-provider';
 
 export function Topbar() {
   const { t, i18n } = useTranslation();
   const isRTL = i18n.language === 'ar';
   const { signOut } = useAuth();
   const navigate = useNavigate();
+  const { mode, setMode } = useTheme();
 
   const toggleLanguage = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -56,6 +58,25 @@ export function Topbar() {
           <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
             <DropdownMenuItem onClick={() => toggleLanguage('fr')}>
               <span className="mr-2">🇫🇷</span> Français
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Display Mode */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="relative" title="Mode d'affichage">
+              {mode === 'dark' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
+            <DropdownMenuItem onClick={() => setMode('dark')}>
+              <Moon className="w-4 h-4 mr-2" />
+              Mode sombre
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setMode('light')}>
+              <Sun className="w-4 h-4 mr-2" />
+              Mode clair
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

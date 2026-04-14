@@ -27,6 +27,7 @@ import {
 } from '@/hooks/useAchats';
 import { createStockItem, deleteStockItem, getStockItems, updateStockItem } from '@/services/stockService';
 import { StockItem } from '@/types/stock';
+import { supabase } from '@/integrations/supabase/client';
 import {
   FactDirection,
   FactDocument,
@@ -45,7 +46,7 @@ import {
   useSendFactDocumentWhatsApp,
   useUpdateFactDocument,
 } from '@/hooks/useFacturation';
-import { Activity, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileDown, Filter, Grid3X3, ListChecks, Mail, MessageCircle, PackagePlus, Plus, Search, Sparkles, Table2, TriangleAlert, Users2 } from 'lucide-react';
+import { Activity, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileDown, Filter, Grid3X3, ListChecks, Mail, MessageCircle, PackagePlus, Plus, Search, Sparkles, Table2, Trash2, TriangleAlert, Users2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -201,6 +202,8 @@ export default function Facturation() {
   const [salesView, setSalesView] = useState<'table' | 'grid'>('table');
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [salesPage, setSalesPage] = useState(1);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [settlementAmount, setSettlementAmount] = useState('');
   const [homeMonthCursor, setHomeMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [newProductName, setNewProductName] = useState('');
   const [newProductPrice, setNewProductPrice] = useState('');
@@ -255,6 +258,17 @@ export default function Facturation() {
     queryKey: ['facturation_stock_items'],
     queryFn: getStockItems,
   });
+  const paymentEventsQ = useQuery({
+    queryKey: ['facturation_payment_events'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('fact_document_events')
+        .select('document_id,event_payload')
+        .eq('event_type', 'payment_recorded');
+      if (error) throw error;
+      return data || [];
+    },
+  });
   const createCatalogItem = useMutation({
     mutationFn: createStockItem,
     onSuccess: () => {
@@ -271,6 +285,17 @@ export default function Facturation() {
     mutationFn: (id: string) => deleteStockItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['facturation_stock_items'] });
+    },
+  });
+  const deleteFactDocument = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('fact_documents').delete().eq('id', id);
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fact-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['facturation_payment_events'] });
     },
   });
 
@@ -617,6 +642,22 @@ export default function Facturation() {
     const start = (salesPageSafe - 1) * rowsPerPage;
     return filteredDocs.slice(start, start + rowsPerPage);
   }, [filteredDocs, rowsPerPage, salesPageSafe]);
+
+  const invoicePaidById = useMemo(() => {
+    const map = new Map<string, number>();
+    (paymentEventsQ.data || []).forEach((evt) => {
+      const payload = evt.event_payload as { amount?: number | string } | null;
+      const amount = Number(payload?.amount || 0);
+      if (!evt.document_id || Number.isNaN(amount) || amount <= 0) return;
+      map.set(evt.document_id, (map.get(evt.document_id) || 0) + amount);
+    });
+    return map;
+  }, [paymentEventsQ.data]);
+
+  const invoiceRemaining = (doc: FactDocument) => {
+    const paid = invoicePaidById.get(doc.id) || 0;
+    return Math.max(0, Number(doc.total_amount || 0) - paid);
+  };
 
   const purchasesRows = useMemo(
     () =>
@@ -1068,6 +1109,176 @@ export default function Facturation() {
     );
   };
 
+  const toggleInvoiceSelection = (id: string) => {
+    setSelectedInvoiceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const toggleAllInvoicesOnPage = () => {
+    const pageIds = salesPagedDocs.filter((d) => d.doc_type === 'facture').map((d) => d.id);
+    setSelectedInvoiceIds((prev) => {
+      const allSelected = pageIds.every((id) => prev.includes(id));
+      if (allSelected) return prev.filter((id) => !pageIds.includes(id));
+      return Array.from(new Set([...prev, ...pageIds]));
+    });
+  };
+
+  const handleExportSelectedInvoicesPdf = async () => {
+    const selectedDocs = docs.filter((d) => selectedInvoiceIds.includes(d.id) && d.doc_type === 'facture');
+    if (selectedDocs.length === 0) return;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    for (let index = 0; index < selectedDocs.length; index += 1) {
+      const d = selectedDocs[index];
+      if (index > 0) pdf.addPage();
+      const { data: lines } = await supabase
+        .from('fact_document_items')
+        .select('*')
+        .eq('document_id', d.id)
+        .order('line_order', { ascending: true });
+      const items = (lines || []) as FactDocumentItem[];
+      const paid = invoicePaidById.get(d.id) || 0;
+      const remain = Math.max(0, Number(d.total_amount || 0) - paid);
+      const companyName = company?.company_name || 'Société';
+      const companyAddress = company?.address || '-';
+      const companyEmail = company?.contact_email || '-';
+      const companyPhone = company?.contact_phone || '-';
+      const companyTax = company?.tax_info || '-';
+
+      pdf.setFillColor(15, 23, 42);
+      pdf.rect(0, 0, 210, 40, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      pdf.text(companyName, 12, 14);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`Email: ${companyEmail}`, 12, 20);
+      pdf.text(`Tél: ${companyPhone}`, 12, 25);
+      pdf.text(`Adresse: ${companyAddress}`, 12, 30);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(15);
+      pdf.text('FACTURE', 140, 14);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`N°: ${d.doc_number}`, 140, 21);
+      pdf.text(`Date: ${new Date(d.issue_date).toLocaleDateString('fr-FR')}`, 140, 26);
+      pdf.text(`Statut: ${d.status}`, 140, 31);
+      pdf.setTextColor(0, 0, 0);
+
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(12, 46, 186, 30, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('Informations client', 14, 53);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`Nom: ${d.client_name || '-'}`, 14, 59);
+      pdf.text(`Email: ${d.client_email || '-'}`, 14, 64);
+      pdf.text(`Téléphone: ${d.client_phone || '-'}`, 14, 69);
+      const clientAddressLines = pdf.splitTextToSize(`Adresse: ${d.client_address || '-'}`, 176);
+      pdf.text(clientAddressLines, 14, 74);
+
+      autoTable(pdf, {
+        startY: 83,
+        head: [['Description', 'Qté', 'PU', 'Rem%', 'TVA%', 'Total']],
+        body: items.map((it) => [
+          it.description || '-',
+          Number(it.quantity || 0).toFixed(2),
+          Number(it.unit_price || 0).toFixed(2),
+          Number(it.discount_rate || 0).toFixed(2),
+          Number(it.tax_rate || 0).toFixed(2),
+          Number(it.line_total || 0).toFixed(2),
+        ]),
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [30, 41, 59] },
+      });
+
+      let finalY = (pdf as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || 120;
+      if (finalY > 230) {
+        pdf.addPage();
+        finalY = 24;
+      }
+      const subtotal = Number(d.subtotal || 0);
+      const tax = Number(d.tax_amount || 0);
+      const paymentStatus = remain <= 0.0001 ? 'PAYE' : paid > 0 ? 'PARTIEL' : 'NON PAYE';
+
+      pdf.setDrawColor(203, 213, 225);
+      pdf.rect(120, finalY + 6, 78, 36);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`Sous-total: ${subtotal.toFixed(2)} MAD`, 123, finalY + 13);
+      pdf.text(`TVA: ${tax.toFixed(2)} MAD`, 123, finalY + 18);
+      pdf.text(`Remise: ${Number(d.discount_amount || 0).toFixed(2)} MAD`, 123, finalY + 23);
+      pdf.text(`Payé: ${paid.toFixed(2)} MAD`, 123, finalY + 28);
+      pdf.text(`Reste: ${remain.toFixed(2)} MAD`, 123, finalY + 33);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Total: ${Number(d.total_amount || 0).toFixed(2)} MAD`, 123, finalY + 40);
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      const taxLines = pdf.splitTextToSize(`Infos fiscales: ${companyTax}`, 100);
+      pdf.text(taxLines, 12, finalY + 14);
+      pdf.text(`Mode règlement: ${paymentStatus}`, 12, finalY + 26);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(12, 280, 198, 280);
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`Document généré le ${new Date().toLocaleString('fr-FR')}`, 12, 286);
+      pdf.text(companyName, 198, 286, { align: 'right' });
+      pdf.setTextColor(0, 0, 0);
+    }
+    pdf.save(`factures-selection-${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const handleSettleDebt = () => {
+    if (selectedInvoiceIds.length !== 1) return;
+    const targetId = selectedInvoiceIds[0];
+    const targetDoc = docs.find((d) => d.id === targetId);
+    if (!targetDoc) return;
+    const paidBefore = invoicePaidById.get(targetId) || 0;
+    const remainingBefore = Math.max(0, Number(targetDoc.total_amount || 0) - paidBefore);
+    const amount = Number(settlementAmount || 0);
+    if (Number.isNaN(amount) || amount <= 0 || amount > remainingBefore) return;
+    const paidAfter = paidBefore + amount;
+    const remainingAfter = Math.max(0, Number(targetDoc.total_amount || 0) - paidAfter);
+    const nextStatus = remainingAfter <= 0 ? 'paid' : paidAfter > 0 ? 'partial' : 'unpaid';
+    createEvent.mutate(
+      {
+        document_id: targetId,
+        event_type: 'payment_recorded',
+        event_label: 'Règlement de dette',
+        event_payload: {
+          amount,
+          paid_before: paidBefore,
+          paid_after: paidAfter,
+          remaining_after: remainingAfter,
+        },
+      },
+      {
+        onSuccess: () => {
+          updateDoc.mutate(
+            {
+              id: targetId,
+              status: nextStatus,
+            },
+            {
+              onSuccess: () => {
+                queryClient.invalidateQueries({ queryKey: ['fact-documents'] });
+                queryClient.invalidateQueries({ queryKey: ['facturation_payment_events'] });
+                setSettlementAmount('');
+              },
+            }
+          );
+        },
+      }
+    );
+  };
+
+  const handleDeleteInvoice = (id: string) => {
+    const ok = window.confirm('Supprimer cette facture ?');
+    if (!ok) return;
+    deleteFactDocument.mutate(id);
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-4">
@@ -1205,11 +1416,47 @@ export default function Facturation() {
                 <div className="text-xs text-muted-foreground mb-2">
                   {salesPagedDocs.length} / {filteredDocs.length} (page {salesPageSafe}/{salesTotalPages})
                 </div>
+                {currentStage === 'facture' && (
+                  <div className="mb-2 p-2 rounded border border-slate-700 bg-slate-900/40 flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-slate-200">Sélection: {selectedInvoiceIds.length}</span>
+                    <Button size="sm" variant="outline" onClick={handleExportSelectedInvoicesPdf} disabled={selectedInvoiceIds.length === 0}>
+                      <FileDown className="w-4 h-4 mr-1" />
+                      PDF sélection
+                    </Button>
+                    <Input
+                      className="w-[160px] h-8"
+                      type="number"
+                      placeholder="Montant règlement"
+                      value={settlementAmount}
+                      onChange={(e) => setSettlementAmount(e.target.value)}
+                    />
+                    <Button size="sm" onClick={handleSettleDebt} disabled={selectedInvoiceIds.length !== 1 || !settlementAmount}>
+                      Règlement dette
+                    </Button>
+                    {selectedInvoiceIds.length === 1 && (
+                      <span className="text-xs text-slate-300">
+                        Reste: {(() => {
+                          const doc = docs.find((d) => d.id === selectedInvoiceIds[0]);
+                          return doc ? invoiceRemaining(doc).toFixed(2) : '0.00';
+                        })()} MAD
+                      </span>
+                    )}
+                  </div>
+                )}
                 {salesView === 'table' ? (
                   <div className="border rounded-md overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-sky-50 dark:bg-sky-900/20">
+                          {currentStage === 'facture' && (
+                            <TableHead className="w-[40px]">
+                              <input
+                                type="checkbox"
+                                checked={salesPagedDocs.filter((d) => d.doc_type === 'facture').every((d) => selectedInvoiceIds.includes(d.id)) && salesPagedDocs.some((d) => d.doc_type === 'facture')}
+                                onChange={toggleAllInvoicesOnPage}
+                              />
+                            </TableHead>
+                          )}
                           <TableHead>Etat</TableHead>
                         <TableHead>{stageUi.numberLabel}</TableHead>
                           <TableHead>Date</TableHead>
@@ -1217,16 +1464,17 @@ export default function Facturation() {
                           <TableHead className="text-right">Montant HT</TableHead>
                           <TableHead className="text-right">Montant TTC</TableHead>
                           <TableHead className="text-right">Solde</TableHead>
+                          {currentStage === 'facture' && <TableHead className="text-right">Actions</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {docsLoading ? (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Chargement...</TableCell>
+                            <TableCell colSpan={currentStage === 'facture' ? 9 : 7} className="text-center py-8 text-muted-foreground">Chargement...</TableCell>
                           </TableRow>
                         ) : salesPagedDocs.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Aucun document.</TableCell>
+                            <TableCell colSpan={currentStage === 'facture' ? 9 : 7} className="text-center py-8 text-muted-foreground">Aucun document.</TableCell>
                           </TableRow>
                         ) : (
                           salesPagedDocs.map((doc) => (
@@ -1237,13 +1485,32 @@ export default function Facturation() {
                                 navigate(`/facturation/${doc.id}`);
                               }}
                             >
+                              {currentStage === 'facture' && (
+                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                  <input type="checkbox" checked={selectedInvoiceIds.includes(doc.id)} onChange={() => toggleInvoiceSelection(doc.id)} />
+                                </TableCell>
+                              )}
                               <TableCell>{getStatusBadge(doc)}</TableCell>
                               <TableCell className="font-semibold text-sky-600">{doc.doc_number}</TableCell>
                               <TableCell>{new Date(doc.issue_date).toLocaleDateString('fr-FR')}</TableCell>
                               <TableCell>{doc.client_name}</TableCell>
                               <TableCell className="text-right">{Number(doc.subtotal || 0).toFixed(2)}</TableCell>
                               <TableCell className="text-right">{Number(doc.total_amount || 0).toFixed(2)}</TableCell>
-                              <TableCell className="text-right">{doc.status === 'paid' ? '0.00' : Number(doc.total_amount || 0).toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{invoiceRemaining(doc).toFixed(2)}</TableCell>
+                              {currentStage === 'facture' && (
+                                <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-red-600 border-red-300 hover:bg-red-50"
+                                    onClick={() => handleDeleteInvoice(doc.id)}
+                                    disabled={deleteFactDocument.isPending}
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-1" />
+                                    Supprimer
+                                  </Button>
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))
                         )}
@@ -1318,6 +1585,16 @@ export default function Facturation() {
                   {contactsTab === 'suppliers' ? 'Fournisseurs' : 'Clients'}
                 </h3>
                 <div className="flex items-center gap-2">
+                  {contactsTab === 'suppliers' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-sm text-xs font-semibold"
+                      onClick={() => navigate('/fournisseurs')}
+                    >
+                      Module Fournisseurs
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     className="h-8 bg-sky-500 hover:bg-sky-600 rounded-sm text-xs font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-95"
@@ -1661,6 +1938,7 @@ export default function Facturation() {
               <div className="flex items-center gap-2">
                 <Button size="sm" variant={achatsTab === 'orders' ? 'default' : 'outline'} className="transition-all duration-200 hover:-translate-y-0.5" onClick={() => setAchatsTab('orders')}>Commandes</Button>
                 <Button size="sm" variant={achatsTab === 'invoices' ? 'default' : 'outline'} className="transition-all duration-200 hover:-translate-y-0.5" onClick={() => setAchatsTab('invoices')}>Factures fournisseurs</Button>
+                <Button size="sm" variant="outline" className="transition-all duration-200 hover:-translate-y-0.5" onClick={() => navigate('/fournisseurs')}>Module Fournisseurs</Button>
               </div>
 
               {achatsTab === 'orders' ? (

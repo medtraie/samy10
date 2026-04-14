@@ -39,6 +39,8 @@ import Reports from "./pages/Reports";
 import Societe from "./pages/Societe";
 import Facturation from "./pages/Facturation";
 import FacturationDetail from "./pages/FacturationDetail";
+import Fournisseurs from "./pages/Fournisseurs";
+import FournisseurDetail from "./pages/FournisseurDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -80,6 +82,8 @@ const App = () => (
           <Route path="/societe" element={<ProtectedRoute><Societe /></ProtectedRoute>} />
           <Route path="/facturation" element={<ProtectedRoute><Facturation /></ProtectedRoute>} />
           <Route path="/facturation/:documentId" element={<ProtectedRoute><FacturationDetail /></ProtectedRoute>} />
+          <Route path="/fournisseurs" element={<ProtectedRoute><Fournisseurs /></ProtectedRoute>} />
+          <Route path="/fournisseurs/:supplierId" element={<ProtectedRoute><FournisseurDetail /></ProtectedRoute>} />
           <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />

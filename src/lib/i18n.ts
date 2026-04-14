@@ -32,6 +32,7 @@ const resources = {
         reports: 'Rapports',
         societe: 'Société',
         facturation: 'Facturation',
+        fournisseurs: 'Fournisseurs',
       },
       achats: {
         title: 'Achats',
@@ -215,6 +216,7 @@ const resources = {
         reports: 'التقارير',
         societe: 'الشركة',
         facturation: 'الفوترة',
+        fournisseurs: 'الموردون',
       },
       achats: {
         title: 'المشتريات',

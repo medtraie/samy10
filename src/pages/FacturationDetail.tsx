@@ -6,12 +6,17 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useConvertFactDocument, useFactDocumentDetails, useReplaceFactDocumentItems, useUpdateFactDocument, type FactDocumentType } from '@/hooks/useFacturation';
-import { ArrowLeft, ArrowRightLeft, FileDown, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useConvertFactDocument, useCreateFactDocument, useCreateFactDocumentEvent, useFactDocumentDetails, useFactDocuments, useReplaceFactDocumentItems, useUpdateFactDocument, type FactDocumentType } from '@/hooks/useFacturation';
+import { ArrowLeft, ArrowRightLeft, Copy, Eye, FileDown, History, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
+import { supabase } from '@/integrations/supabase/client';
 
 type EditableItem = {
   id?: string;
@@ -30,48 +35,122 @@ const nextTypeMap: Record<FactDocumentType, FactDocumentType | null> = {
   facture: null,
 };
 
-const statusWorkflowMap: Record<FactDocumentType, Array<{ value: string; label: string }>> = {
-  devis: [
-    { value: 'draft', label: 'Brouillon' },
-    { value: 'sent', label: 'Envoyé' },
-    { value: 'approved', label: 'Validé' },
-    { value: 'rejected', label: 'Refusé' },
-  ],
-  bon_commande: [
-    { value: 'draft', label: 'Brouillon' },
-    { value: 'sent', label: 'Envoyé' },
-    { value: 'approved', label: 'Validé' },
-  ],
-  bon_livraison: [
-    { value: 'draft', label: 'Brouillon' },
-    { value: 'sent', label: 'Envoyé' },
-    { value: 'delivered', label: 'Livré' },
-  ],
-  facture: [
-    { value: 'draft', label: 'Brouillon' },
-    { value: 'sent', label: 'Envoyé' },
-    { value: 'partial', label: 'Partiel' },
-    { value: 'overdue', label: 'En retard' },
-    { value: 'paid', label: 'Payé' },
-  ],
+const paymentWorkflow = [
+  { value: 'paid', label: 'Payé' },
+  { value: 'unpaid', label: 'Non payé' },
+  { value: 'partial', label: 'Partiel' },
+] as const;
+
+const PDF_TEMPLATES = ['classic', 'modern'] as const;
+type PdfTemplate = (typeof PDF_TEMPLATES)[number];
+
+const extractClientIceFromNotes = (notesValue: string | null | undefined) => {
+  if (!notesValue) return '';
+  const match = notesValue.match(/\[ICE_CLIENT:([^\]]+)\]/i);
+  return match?.[1]?.trim() || '';
+};
+
+const stripIceMarker = (notesValue: string | null | undefined) => {
+  if (!notesValue) return '';
+  return notesValue.replace(/\n?\[ICE_CLIENT:[^\]]+\]\s*/gi, '').trim();
+};
+
+const composeNotesWithIce = (plainNotes: string, clientIce: string) => {
+  const cleanedNotes = stripIceMarker(plainNotes);
+  const ice = clientIce.trim();
+  if (!ice) return cleanedNotes;
+  return `${cleanedNotes}${cleanedNotes ? '\n' : ''}[ICE_CLIENT:${ice}]`;
+};
+
+const parseLegalInfo = (taxInfo: string | null | undefined) => {
+  const source = taxInfo || '';
+  const extract = (label: string) => {
+    const re = new RegExp(`${label}\\s*[:\\-]?\\s*([^\\n\\r]+?)\\s*(?=(RC|Patente|CNSS|ICE)\\s*[:\\-]|$)`, 'i');
+    const match = source.match(re);
+    return match?.[1]?.trim() || '-';
+  };
+  return {
+    rc: extract('RC'),
+    patente: extract('Patente'),
+    cnss: extract('CNSS'),
+    ice: extract('ICE'),
+  };
+};
+
+const UNITS_FR = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf'];
+const TEENS_FR = ['dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf'];
+const TENS_FR = ['', '', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante'];
+
+const frBelow100 = (n: number): string => {
+  if (n < 10) return UNITS_FR[n];
+  if (n < 20) return TEENS_FR[n - 10];
+  if (n < 70) {
+    const ten = Math.floor(n / 10);
+    const unit = n % 10;
+    if (unit === 1 && ten !== 8) return `${TENS_FR[ten]} et un`;
+    return unit === 0 ? TENS_FR[ten] : `${TENS_FR[ten]}-${UNITS_FR[unit]}`;
+  }
+  if (n < 80) {
+    const rem = n - 60;
+    return rem === 11 ? 'soixante et onze' : `soixante-${frBelow100(rem)}`;
+  }
+  const rem = n - 80;
+  if (rem === 0) return 'quatre-vingts';
+  return `quatre-vingt-${frBelow100(rem)}`;
+};
+
+const frBelow1000 = (n: number): string => {
+  if (n < 100) return frBelow100(n);
+  const hundred = Math.floor(n / 100);
+  const rem = n % 100;
+  const hundredWord = hundred === 1 ? 'cent' : `${UNITS_FR[hundred]} cent`;
+  if (rem === 0) return hundred > 1 ? `${hundredWord}s` : hundredWord;
+  return `${hundredWord} ${frBelow100(rem)}`;
+};
+
+const numberToFrenchWords = (n: number): string => {
+  const value = Math.floor(Math.max(0, n));
+  if (value === 0) return 'zéro';
+  const millions = Math.floor(value / 1000000);
+  const thousands = Math.floor((value % 1000000) / 1000);
+  const rest = value % 1000;
+  const parts: string[] = [];
+  if (millions > 0) parts.push(`${frBelow1000(millions)} ${millions > 1 ? 'millions' : 'million'}`);
+  if (thousands > 0) parts.push(thousands === 1 ? 'mille' : `${frBelow1000(thousands)} mille`);
+  if (rest > 0) parts.push(frBelow1000(rest));
+  return parts.join(' ');
 };
 
 export default function FacturationDetail() {
   const navigate = useNavigate();
   const { documentId } = useParams<{ documentId: string }>();
   const { data, isLoading } = useFactDocumentDetails(documentId);
+  const { data: docs = [] } = useFactDocuments();
+  const { data: company } = useTourismCompanyProfile();
   const updateDoc = useUpdateFactDocument();
   const replaceItems = useReplaceFactDocumentItems();
   const convertDoc = useConvertFactDocument();
+  const createDoc = useCreateFactDocument();
+  const createEvent = useCreateFactDocumentEvent();
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientAddress, setClientAddress] = useState('');
+  const [clientIce, setClientIce] = useState('');
   const [notes, setNotes] = useState('');
   const [taxRate, setTaxRate] = useState(20);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [items, setItems] = useState<EditableItem[]>([]);
   const [status, setStatus] = useState('draft');
+  const [timelineInvoiceFilter, setTimelineInvoiceFilter] = useState<'all' | 'paid' | 'unpaid' | 'partial'>('all');
+  const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  const [pdfTemplate, setPdfTemplate] = useState<PdfTemplate>('modern');
+  const [partialAmount, setPartialAmount] = useState('');
+  const [exportShowHeader, setExportShowHeader] = useState(true);
+  const [exportShowFooter, setExportShowFooter] = useState(true);
 
   useEffect(() => {
     if (!data?.document) return;
@@ -79,10 +158,13 @@ export default function FacturationDetail() {
     setClientEmail(data.document.client_email || '');
     setClientPhone(data.document.client_phone || '');
     setClientAddress(data.document.client_address || '');
-    setNotes(data.document.notes || '');
+    setClientIce(extractClientIceFromNotes(data.document.notes));
+    setNotes(stripIceMarker(data.document.notes || ''));
     setTaxRate(Number(data.document.tax_rate || 20));
     setDiscountAmount(Number(data.document.discount_amount || 0));
     setStatus(data.document.status || 'draft');
+    setExportShowHeader(Boolean(data.document.show_header));
+    setExportShowFooter(Boolean(data.document.show_footer));
     setItems(
       data.items.length > 0
         ? data.items.map((item) => ({
@@ -105,10 +187,130 @@ export default function FacturationDetail() {
     return { subtotal, tax, total };
   }, [items, taxRate, discountAmount]);
 
-  const statusSteps = useMemo(() => {
+  const clientInvoices = useMemo(() => {
+    const client = (data?.document?.client_name || '').trim().toLowerCase();
+    if (!client) return [];
+    const all = docs
+      .filter((d) => d.doc_type === 'facture' && (d.client_name || '').trim().toLowerCase() === client)
+      .sort((a, b) => new Date(b.issue_date).getTime() - new Date(a.issue_date).getTime());
+    if (timelineInvoiceFilter === 'all') return all;
+    return all.filter((d) => d.status === timelineInvoiceFilter);
+  }, [docs, data?.document?.client_name, timelineInvoiceFilter]);
+
+  const paymentHistoryRows = useMemo(() => {
     if (!data?.document) return [];
-    return statusWorkflowMap[data.document.doc_type] || [];
-  }, [data?.document]);
+    const total = Number(data.document.total_amount || 0);
+    let paidAcc = 0;
+    return (data.events || [])
+      .filter((event) => event.event_type === 'payment_recorded')
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      .map((event) => {
+        const payload = event.event_payload as { amount?: number | string } | null;
+        const amount = Number(payload?.amount || 0);
+        paidAcc += Number.isNaN(amount) ? 0 : amount;
+        const remaining = Math.max(0, total - paidAcc);
+        return {
+          id: event.id,
+          label: event.event_label,
+          date: event.created_at,
+          amount: Number.isNaN(amount) ? 0 : amount,
+          remaining,
+        };
+      });
+  }, [data?.document, data?.events]);
+
+  const paymentSummary = useMemo(() => {
+    const paid = paymentHistoryRows.reduce((acc, row) => acc + row.amount, 0);
+    const total = Number(data?.document?.total_amount || 0);
+    return {
+      paid,
+      remaining: Math.max(0, total - paid),
+      total,
+    };
+  }, [paymentHistoryRows, data?.document?.total_amount]);
+
+  const paymentStamp = useMemo(() => {
+    if (paymentSummary.remaining <= 0.0001) {
+      return { label: 'PAYE', className: 'bg-green-600/20 text-green-300 border-green-500/40' };
+    }
+    if (paymentSummary.paid > 0) {
+      return { label: 'PARTIEL', className: 'bg-amber-500/20 text-amber-300 border-amber-400/40' };
+    }
+    return { label: 'NON PAYE', className: 'bg-red-600/20 text-red-300 border-red-500/40' };
+  }, [paymentSummary]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const logo = company?.logo_url;
+      if (!logo) {
+        setLogoDataUrl(null);
+        return;
+      }
+      try {
+        let blob: Blob | null = null;
+
+        if (!logo.startsWith('http')) {
+          // 1) Most reliable for private storage: direct download via authenticated client.
+          const downloadRes = await supabase.storage.from('tourism-assets').download(logo);
+          if (!downloadRes.error && downloadRes.data) {
+            blob = downloadRes.data;
+          } else {
+            // 2) Fallback: signed URL
+            const signed = await supabase.storage.from('tourism-assets').createSignedUrl(logo, 60 * 10);
+            if (!signed.error && signed.data?.signedUrl) {
+              const response = await fetch(signed.data.signedUrl);
+              if (response.ok) blob = await response.blob();
+            }
+            // 3) Fallback: public URL
+            if (!blob) {
+              const publicData = supabase.storage.from('tourism-assets').getPublicUrl(logo);
+              if (publicData.data.publicUrl) {
+                const response = await fetch(publicData.data.publicUrl);
+                if (response.ok) blob = await response.blob();
+              }
+            }
+          }
+        } else {
+          const response = await fetch(logo);
+          if (response.ok) blob = await response.blob();
+        }
+
+        if (!blob) throw new Error('Unable to load logo blob');
+
+        // Convert to PNG data URL for maximum jsPDF compatibility (even if source is webp/svg/jpeg)
+        const objectUrl = URL.createObjectURL(blob);
+        try {
+          const pngDataUrl = await new Promise<string>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth || img.width || 256;
+              canvas.height = img.naturalHeight || img.height || 256;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                reject(new Error('Canvas context unavailable'));
+                return;
+              }
+              ctx.drawImage(img, 0, 0);
+              resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = () => reject(new Error('Image decode failed'));
+            img.src = objectUrl;
+          });
+          if (!cancelled) setLogoDataUrl(pngDataUrl);
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      } catch {
+        if (!cancelled) setLogoDataUrl(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [company?.logo_url]);
 
   const updateItem = (idx: number, patch: Partial<EditableItem>) => {
     setItems((prev) => prev.map((item, i) => (i === idx ? { ...item, ...patch } : item)));
@@ -123,7 +325,7 @@ export default function FacturationDetail() {
       client_email: clientEmail || null,
       client_phone: clientPhone || null,
       client_address: clientAddress || null,
-      notes: notes || null,
+      notes: composeNotesWithIce(notes, clientIce) || null,
       tax_rate: taxRate,
       discount_amount: discountAmount,
     };
@@ -154,10 +356,37 @@ export default function FacturationDetail() {
   };
 
   const handleStatusWorkflow = (nextStatus: string) => {
+    if (nextStatus === 'partial') return;
     const payload = buildDocumentPayload(nextStatus);
     if (!payload) return;
     setStatus(nextStatus);
     updateDoc.mutate(payload);
+  };
+
+  const handleConfirmPartialPayment = () => {
+    if (!data?.document) return;
+    const amount = Number(partialAmount || 0);
+    if (Number.isNaN(amount) || amount <= 0) return;
+    createEvent.mutate(
+      {
+        document_id: data.document.id,
+        event_type: 'payment_recorded',
+        event_label: 'Règlement partiel',
+        event_payload: {
+          amount,
+          source: 'workflow_partial',
+        },
+      },
+      {
+        onSuccess: () => {
+          const payload = buildDocumentPayload('partial');
+          if (!payload) return;
+          setStatus('partial');
+          updateDoc.mutate(payload);
+          setPartialAmount('');
+        },
+      }
+    );
   };
 
   const handleConvert = () => {
@@ -173,41 +402,330 @@ export default function FacturationDetail() {
   };
 
   const handleExportPdf = () => {
+    const pdf = buildInvoicePdf(pdfTemplate, { includeHeader: exportShowHeader, includeFooter: exportShowFooter });
+    if (!pdf || !data?.document) return;
+    pdf.save(`${data.document.doc_number}.pdf`);
+  };
+
+  const buildInvoicePdf = (
+    template: PdfTemplate = pdfTemplate,
+    options?: { includeHeader?: boolean; includeFooter?: boolean }
+  ) => {
     if (!data?.document) return;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const includeHeader = options?.includeHeader ?? true;
+    const includeFooter = options?.includeFooter ?? true;
+
+    const companyName = company?.company_name || 'Société';
+    const companyAddress = company?.address || '-';
+    const companyEmail = company?.contact_email || '-';
+    const companyPhone = company?.contact_phone || '-';
+    const companyTax = company?.tax_info || '-';
+
+    const palette = template === 'modern'
+      ? {
+          header: [15, 23, 42] as [number, number, number],
+          headerAccent: [30, 41, 59] as [number, number, number],
+          card: [241, 245, 249] as [number, number, number],
+          cardAccent: [226, 232, 240] as [number, number, number],
+          table: [30, 41, 59] as [number, number, number],
+          text: [15, 23, 42] as [number, number, number],
+        }
+      : {
+          header: [30, 64, 175] as [number, number, number],
+          headerAccent: [37, 99, 235] as [number, number, number],
+          card: [239, 246, 255] as [number, number, number],
+          cardAccent: [219, 234, 254] as [number, number, number],
+          table: [30, 64, 175] as [number, number, number],
+          text: [15, 23, 42] as [number, number, number],
+        };
+
+    const pageW = 210;
+    const pageH = 297;
+    const marginX = 12;
+    const contentW = 186;
+    const headerLogoX = 12;
+    const headerLogoY = 8;
+    const headerLogoW = 28;
+    const headerLogoH = 28;
+
+    // Print-ready: minimal ink, high contrast, fixed margins
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageW, pageH, 'F');
+    if (includeHeader) {
+      doc.setFillColor(palette.header[0], palette.header[1], palette.header[2]);
+      doc.rect(0, 0, pageW, 6, 'F');
+
+      // Logo at extreme top-left
+      doc.setDrawColor(203, 213, 225);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(headerLogoX, headerLogoY, headerLogoW, headerLogoH, 2, 2, 'FD');
+      if (logoDataUrl) {
+        try {
+          doc.addImage(logoDataUrl, 'PNG', headerLogoX + 1.2, headerLogoY + 1.2, headerLogoW - 2.4, headerLogoH - 2.4, undefined, 'FAST');
+        } catch {
+          doc.setTextColor(100, 116, 139);
+          doc.setFontSize(8);
+          doc.text('LOGO', headerLogoX + headerLogoW / 2, headerLogoY + headerLogoH / 2 + 1, { align: 'center' });
+        }
+      } else {
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(8);
+        doc.text('LOGO', headerLogoX + headerLogoW / 2, headerLogoY + headerLogoH / 2 + 1, { align: 'center' });
+      }
+
+      // Company block directly below logo (left column)
+      doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text(companyName, headerLogoX, 42);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Email: ${companyEmail}`, headerLogoX, 47);
+      doc.text(`Tél: ${companyPhone}`, headerLogoX, 52);
+      const companyAddressLines = doc.splitTextToSize(`Adresse: ${companyAddress}`, 84);
+      doc.text(companyAddressLines, headerLogoX, 57);
+
+      // FACTURE frame (clear and readable)
+      doc.setDrawColor(palette.header[0], palette.header[1], palette.header[2]);
+      doc.setLineWidth(0.6);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(124, 10, 74, 44, 2, 2, 'FD');
+      doc.setFillColor(palette.header[0], palette.header[1], palette.header[2]);
+      doc.rect(124, 10, 74, 9, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('FACTURE', 161, 16, { align: 'center' });
+      doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(`N°: ${data.document.doc_number}`, 127, 27);
+      doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, 34);
+      doc.text(`Statut: ${data.document.status || status}`, 127, 41);
+      if (data.document.due_date) {
+        doc.text(`Due Date: ${new Date(data.document.due_date).toLocaleDateString('fr-FR')}`, 127, 48);
+      }
+
+      // Separator between header and body
+      doc.setDrawColor(203, 213, 225);
+      doc.line(12, 67, 198, 67);
+    }
+
+    // Subtle watermark logo in body background
+    if (logoDataUrl) {
+      try {
+        const anyDoc = doc as unknown as {
+          setGState?: (arg: unknown) => void;
+          GState?: new (options: { opacity: number }) => unknown;
+        };
+        if (anyDoc.setGState && anyDoc.GState) {
+          anyDoc.setGState(new anyDoc.GState({ opacity: 0.04 }));
+          doc.addImage(logoDataUrl, 'PNG', 70, 130, 70, 70, undefined, 'FAST');
+          anyDoc.setGState(new anyDoc.GState({ opacity: 1 }));
+        }
+      } catch {
+        // ignore watermark failures silently
+      }
+    }
+
+    // Body starts below header separator
+    const clientCardY = includeHeader ? 72 : 16;
+    doc.setFillColor(palette.card[0], palette.card[1], palette.card[2]);
+    doc.roundedRect(marginX, clientCardY, contentW, 40, 2, 2, 'F');
+    doc.setFillColor(palette.cardAccent[0], palette.cardAccent[1], palette.cardAccent[2]);
+    doc.rect(marginX, clientCardY, contentW, 6, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text(`${data.document.doc_number} (${data.document.doc_type})`, 12, 14);
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Client: ${clientName || '-'}`, 12, 21);
-    doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 12, 27);
+    doc.text('Informations client', marginX + 2, clientCardY + 4.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.text(`Nom: ${clientName || '-'}`, marginX + 2, clientCardY + 12);
+    doc.text(`Email: ${clientEmail || '-'}`, marginX + 2, clientCardY + 17);
+    doc.text(`Téléphone: ${clientPhone || '-'}`, marginX + 2, clientCardY + 22);
+    doc.text(`ICE: ${clientIce || '-'}`, marginX + 2, clientCardY + 27);
+    const clientAddressLines = doc.splitTextToSize(`Adresse: ${clientAddress || '-'}`, 178);
+    doc.text(clientAddressLines, marginX + 2, clientCardY + 34);
+
     autoTable(doc, {
-      startY: 33,
-      head: [['Description', 'Qté', 'PU', 'Rem%', 'TVA%', 'Total']],
+      startY: clientCardY + 46,
+      head: [['Description', 'Qty', 'Unit Price', 'Tax %', 'Total']],
       body: items.map((item) => {
         const lineTotal = Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 - Number(item.discount_rate || 0) / 100) * (1 + Number(item.tax_rate || 0) / 100);
         return [
           item.description || '-',
           Number(item.quantity || 0).toFixed(2),
           Number(item.unit_price || 0).toFixed(2),
-          Number(item.discount_rate || 0).toFixed(2),
           Number(item.tax_rate || 0).toFixed(2),
           lineTotal.toFixed(2),
         ];
       }),
+      styles: { fontSize: 9.5, cellPadding: 2.8, lineColor: [203, 213, 225], lineWidth: 0.2, textColor: [15, 23, 42] },
+      headStyles: { fillColor: palette.table },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    });
+
+    let finalY = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || 120;
+    const paymentStatus = paymentSummary.remaining <= 0.0001 ? 'PAYE' : paymentSummary.paid > 0 ? 'PARTIEL' : 'NON PAYE';
+    if (finalY > 215) {
+      doc.addPage();
+      finalY = 20;
+    }
+
+    // Colored cards for payment/details summary
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(12, finalY + 8, 106, 38, 2, 2, 'F');
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(120, finalY + 8, 78, 38, 2, 2, 'F');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Mode règlement: ${paymentStatus}`, 14, finalY + 16);
+    doc.text(`Payé: ${paymentSummary.paid.toFixed(2)} MAD`, 14, finalY + 22);
+    doc.text(`Reste: ${paymentSummary.remaining.toFixed(2)} MAD`, 14, finalY + 28);
+    const amountWords = numberToFrenchWords(totals.total);
+    doc.text(`Arrêtée à la somme de: ${amountWords} dirhams`, 14, finalY + 34);
+
+    doc.text(`Subtotal: ${totals.subtotal.toFixed(2)} MAD`, 123, finalY + 15);
+    doc.text(`VAT 20%: ${totals.tax.toFixed(2)} MAD`, 123, finalY + 21);
+    doc.text(`Discount: ${Number(discountAmount || 0).toFixed(2)} MAD`, 123, finalY + 27);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Grand Total: ${totals.total.toFixed(2)} MAD`, 123, finalY + 35);
+
+    if (includeFooter) {
+      // Footer: legal/tax info always at bottom with clear separation
+      doc.setFillColor(248, 250, 252);
+      doc.rect(0, pageH - 28, pageW, 28, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(12, 272, 198, 272);
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      const legal = parseLegalInfo(companyTax);
+      const legalLine = `Infos fiscales société   RC: ${legal.rc}   Patente: ${legal.patente}   CNSS: ${legal.cnss}   ICE: ${legal.ice}`;
+      const taxLines = doc.splitTextToSize(legalLine, 184);
+      doc.text(taxLines, 12, 276);
+
+      doc.text('Cachet & Signature', 198, 282, { align: 'right' });
+      doc.rect(162, 284, 36, 9);
+
+      doc.setFontSize(8);
+      doc.text(`Document généré le ${new Date().toLocaleString('fr-FR')}`, 12, 291);
+      doc.text(companyName, 198, 286, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+    }
+
+    return doc;
+  };
+
+  const handlePreviewPdf = () => {
+    const pdf = buildInvoicePdf(pdfTemplate, { includeHeader: exportShowHeader, includeFooter: exportShowFooter });
+    if (!pdf) return;
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    setPdfPreviewUrl(url);
+    setPdfPreviewOpen(true);
+  };
+
+  const handleDuplicate = () => {
+    if (!data?.document) return;
+    createDoc.mutate(
+      {
+        doc_type: data.document.doc_type,
+        client_name: clientName,
+        client_email: clientEmail || null,
+        client_phone: clientPhone || null,
+        client_address: clientAddress || null,
+        issue_date: new Date().toISOString().slice(0, 10),
+        due_date: data.document.due_date || null,
+        status: 'draft',
+        language: data.document.language,
+        direction: data.document.direction,
+        template_type: data.document.template_type,
+        show_header: data.document.show_header,
+        show_footer: data.document.show_footer,
+        notes: notes || null,
+        tax_rate: taxRate,
+        discount_amount: discountAmount,
+      },
+      {
+        onSuccess: (newDoc) => {
+          replaceItems.mutate(
+            {
+              documentId: newDoc.id,
+              items: items.map((item, idx) => ({
+                line_order: idx + 1,
+                description: item.description,
+                quantity: item.quantity,
+                unit: item.unit,
+                unit_price: item.unit_price,
+                discount_rate: item.discount_rate,
+                tax_rate: item.tax_rate,
+              })),
+            },
+            {
+              onSuccess: () => navigate(`/facturation/${newDoc.id}`),
+            }
+          );
+        },
+      }
+    );
+  };
+
+  const handlePrintPaymentHistoryPdf = () => {
+    if (!data?.document) return;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(14);
+    pdf.text('Historique des règlements', 12, 14);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text(`Document: ${data.document.doc_number}`, 12, 21);
+    pdf.text(`Client: ${data.document.client_name}`, 12, 27);
+    autoTable(pdf, {
+      startY: 33,
+      head: [['Date', 'Libellé', 'Montant', 'Solde après']],
+      body:
+        paymentHistoryRows.length > 0
+          ? paymentHistoryRows.map((row) => [
+              new Date(row.date).toLocaleString('fr-FR'),
+              row.label,
+              `${row.amount.toFixed(2)} MAD`,
+              `${row.remaining.toFixed(2)} MAD`,
+            ])
+          : [['-', 'Aucun règlement enregistré.', '-', '-']],
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [37, 99, 235] },
     });
-    const finalY = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || 120;
-    doc.setFontSize(10);
-    doc.text(`Sous-total: ${totals.subtotal.toFixed(2)} MAD`, 140, finalY + 8);
-    doc.text(`TVA: ${totals.tax.toFixed(2)} MAD`, 140, finalY + 13);
-    doc.text(`Remise: ${Number(discountAmount || 0).toFixed(2)} MAD`, 140, finalY + 18);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Total: ${totals.total.toFixed(2)} MAD`, 140, finalY + 24);
-    doc.save(`${data.document.doc_number}.pdf`);
+    const finalY = (pdf as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || 120;
+    pdf.setFontSize(10);
+    pdf.text(`Total facture: ${paymentSummary.total.toFixed(2)} MAD`, 12, finalY + 8);
+    pdf.text(`Total payé: ${paymentSummary.paid.toFixed(2)} MAD`, 12, finalY + 14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`Reste: ${paymentSummary.remaining.toFixed(2)} MAD`, 12, finalY + 20);
+
+    const stamp =
+      paymentSummary.remaining <= 0.0001
+        ? { text: 'PAYE', color: [22, 163, 74] as [number, number, number] }
+        : paymentSummary.paid > 0
+          ? { text: 'PARTIEL', color: [234, 179, 8] as [number, number, number] }
+          : { text: 'NON PAYE', color: [220, 38, 38] as [number, number, number] };
+
+    pdf.setTextColor(stamp.color[0], stamp.color[1], stamp.color[2]);
+    pdf.setFontSize(24);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(stamp.text, 150, 24, { angle: 18 });
+    pdf.setTextColor(0, 0, 0);
+
+    pdf.save(`historique-reglements-${data.document.doc_number}.pdf`);
   };
+
+  useEffect(() => {
+    return () => {
+      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    };
+  }, [pdfPreviewUrl]);
 
   return (
     <DashboardLayout>
@@ -238,13 +756,42 @@ export default function FacturationDetail() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{data.document.status}</Badge>
+                    <Select value={pdfTemplate} onValueChange={(value: PdfTemplate) => setPdfTemplate(value)}>
+                      <SelectTrigger className="w-[130px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="classic">Classic PDF</SelectItem>
+                        <SelectItem value="modern">Modern PDF</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-1 border rounded px-2 py-1">
+                      <Label className="text-xs">en-tête</Label>
+                      <Switch checked={exportShowHeader} onCheckedChange={setExportShowHeader} />
+                    </div>
+                    <div className="flex items-center gap-1 border rounded px-2 py-1">
+                      <Label className="text-xs">pied</Label>
+                      <Switch checked={exportShowFooter} onCheckedChange={setExportShowFooter} />
+                    </div>
+                    <Button size="sm" variant="outline" onClick={handlePreviewPdf}>
+                      <Eye className="w-4 h-4 mr-1" />
+                      Aperçu PDF
+                    </Button>
                     <Button size="sm" variant="outline" onClick={handleExportPdf}>
                       <FileDown className="w-4 h-4 mr-1" />
-                      Export PDF
+                      Télécharger PDF
                     </Button>
                     <Button size="sm" variant="outline" onClick={handleConvert} disabled={!nextTypeMap[data.document.doc_type] || convertDoc.isPending}>
                       <ArrowRightLeft className="w-4 h-4 mr-1" />
                       Convertir
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleDuplicate} disabled={createDoc.isPending || replaceItems.isPending}>
+                      <Copy className="w-4 h-4 mr-1" />
+                      Dupliquer
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setPaymentHistoryOpen(true)}>
+                      <History className="w-4 h-4 mr-1" />
+                      Historique règlements
                     </Button>
                     <Button size="sm" onClick={handleSave} disabled={updateDoc.isPending || replaceItems.isPending}>
                       Enregistrer
@@ -269,13 +816,13 @@ export default function FacturationDetail() {
                   <div className="space-y-1 md:col-span-2">
                     <Label>Workflow statut</Label>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {statusSteps.map((step) => (
+                      {paymentWorkflow.map((step) => (
                         <Button
                           key={step.value}
                           size="sm"
                           variant={status === step.value ? 'default' : 'outline'}
-                          onClick={() => handleStatusWorkflow(step.value)}
-                          disabled={updateDoc.isPending}
+                          onClick={() => (step.value === 'partial' ? handleConfirmPartialPayment() : handleStatusWorkflow(step.value))}
+                          disabled={updateDoc.isPending || (step.value === 'partial' && (!partialAmount || createEvent.isPending))}
                         >
                           {step.label}
                         </Button>
@@ -285,6 +832,19 @@ export default function FacturationDetail() {
                   <div className="space-y-1 md:col-span-2">
                     <Label>Adresse</Label>
                     <Textarea value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} rows={2} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>ICE client</Label>
+                    <Input value={clientIce} onChange={(e) => setClientIce(e.target.value)} placeholder="ICE..." />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Montant partiel (obligatoire)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input type="number" value={partialAmount} onChange={(e) => setPartialAmount(e.target.value)} placeholder="Montant..." />
+                      <Button size="sm" onClick={handleConfirmPartialPayment} disabled={!partialAmount || createEvent.isPending}>
+                        Valider Partiel
+                      </Button>
+                    </div>
                   </div>
                 </div>
                 <div className="border rounded-md overflow-hidden">
@@ -346,12 +906,113 @@ export default function FacturationDetail() {
               </CardContent>
             </Card>
 
+            <Dialog open={pdfPreviewOpen} onOpenChange={setPdfPreviewOpen}>
+              <DialogContent className="max-w-5xl">
+                <DialogHeader>
+                  <DialogTitle>Aperçu PDF - Facture</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-2">
+                  <div className="flex justify-end">
+                    <Button size="sm" variant="outline" onClick={handleExportPdf}>
+                      <FileDown className="w-4 h-4 mr-1" />
+                      Télécharger PDF
+                    </Button>
+                  </div>
+                  {pdfPreviewUrl ? (
+                    <iframe title="Aperçu PDF facture" src={pdfPreviewUrl} className="w-full h-[70vh] border rounded-md bg-white" />
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Aperçu indisponible.</div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={paymentHistoryOpen} onOpenChange={setPaymentHistoryOpen}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Historique des règlements</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-end">
+                    <Button size="sm" variant="outline" onClick={handlePrintPaymentHistoryPdf}>
+                      <FileDown className="w-4 h-4 mr-1" />
+                      Imprimer historique
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div className="border rounded p-2"><span className="text-muted-foreground">Total facture:</span> {paymentSummary.total.toFixed(2)} MAD</div>
+                    <div className="border rounded p-2"><span className="text-muted-foreground">Total payé:</span> {paymentSummary.paid.toFixed(2)} MAD</div>
+                    <div className="border rounded p-2"><span className="text-muted-foreground">Reste:</span> {paymentSummary.remaining.toFixed(2)} MAD</div>
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <Badge variant="outline" className={paymentStamp.className}>{paymentStamp.label}</Badge>
+                  </div>
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Libellé</TableHead>
+                          <TableHead className="text-right">Montant</TableHead>
+                          <TableHead className="text-right">Solde après</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paymentHistoryRows.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Aucun règlement enregistré.</TableCell>
+                          </TableRow>
+                        ) : (
+                          paymentHistoryRows.map((row) => (
+                            <TableRow key={row.id}>
+                              <TableCell>{new Date(row.date).toLocaleString('fr-FR')}</TableCell>
+                              <TableCell>{row.label}</TableCell>
+                              <TableCell className="text-right">{row.amount.toFixed(2)} MAD</TableCell>
+                              <TableCell className="text-right">{row.remaining.toFixed(2)} MAD</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             <Card className="xl:col-span-4">
               <CardHeader>
                 <CardTitle>Timeline</CardTitle>
-                <CardDescription>Historique du document</CardDescription>
+                <CardDescription>Historique + toutes les factures du client</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Factures du client</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button size="sm" variant={timelineInvoiceFilter === 'all' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('all')}>Toutes les factures</Button>
+                  <Button size="sm" variant={timelineInvoiceFilter === 'paid' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('paid')}>Payées</Button>
+                  <Button size="sm" variant={timelineInvoiceFilter === 'unpaid' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('unpaid')}>Non payé</Button>
+                  <Button size="sm" variant={timelineInvoiceFilter === 'partial' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('partial')}>Partiel</Button>
+                </div>
+                {clientInvoices.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Aucune facture pour ce client.</div>
+                ) : (
+                  clientInvoices.map((inv) => (
+                    <button
+                      key={inv.id}
+                      className="w-full text-left border rounded-md p-3 hover:bg-muted/30 transition-colors"
+                      onClick={() => navigate(`/facturation/${inv.id}`)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-medium">{inv.doc_number}</div>
+                        <Badge variant="outline">{inv.status}</Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {new Date(inv.issue_date).toLocaleDateString('fr-FR')} · {Number(inv.total_amount || 0).toFixed(2)} MAD
+                      </div>
+                    </button>
+                  ))
+                )}
+                <div className="h-px bg-border my-2" />
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Événements document</div>
                 {data.events.length === 0 ? (
                   <div className="text-sm text-muted-foreground">Aucun événement.</div>
                 ) : (

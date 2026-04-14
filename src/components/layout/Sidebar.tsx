@@ -61,6 +61,7 @@ const navItems = [
   { key: 'clients', icon: Users, path: '/clients', module: 'clients' },
   { key: 'societe', icon: Building2, path: '/societe', module: 'societe' },
   { key: 'facturation', icon: ReceiptText, path: '/facturation', module: 'facturation' },
+  { key: 'fournisseurs', icon: Building2, path: '/fournisseurs', module: 'fournisseurs' },
   { key: 'achats', icon: ShoppingCart, path: '/achats', module: 'achats' },
   { key: 'finance', icon: DollarSign, path: '/finance', module: 'finance' },
   { key: 'comptabilite', icon: BookOpen, path: '/comptabilite', module: 'comptabilite' },
