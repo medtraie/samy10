@@ -749,13 +749,13 @@ export default function FacturationDetail() {
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
             <Card className="xl:col-span-8">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardHeader className="space-y-3">
+                <div className="flex items-start justify-between gap-2 flex-wrap">
                   <div>
                     <CardTitle>{data.document.doc_number}</CardTitle>
                     <CardDescription>{data.document.doc_type} · {new Date(data.document.issue_date).toLocaleDateString('fr-FR')}</CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap md:justify-end">
                     <Badge variant="outline">{data.document.status}</Badge>
                     <Select value={pdfTemplate} onValueChange={(value: PdfTemplate) => setPdfTemplate(value)}>
                       <SelectTrigger className="w-[130px] h-8">
@@ -774,30 +774,32 @@ export default function FacturationDetail() {
                       <Label className="text-xs">pied</Label>
                       <Switch checked={exportShowFooter} onCheckedChange={setExportShowFooter} />
                     </div>
-                    <Button size="sm" variant="outline" onClick={handlePreviewPdf}>
-                      <Eye className="w-4 h-4 mr-1" />
-                      Aperçu PDF
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={handleExportPdf}>
-                      <FileDown className="w-4 h-4 mr-1" />
-                      Télécharger PDF
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={handleConvert} disabled={!nextTypeMap[data.document.doc_type] || convertDoc.isPending}>
-                      <ArrowRightLeft className="w-4 h-4 mr-1" />
-                      Convertir
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={handleDuplicate} disabled={createDoc.isPending || replaceItems.isPending}>
-                      <Copy className="w-4 h-4 mr-1" />
-                      Dupliquer
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setPaymentHistoryOpen(true)}>
-                      <History className="w-4 h-4 mr-1" />
-                      Historique règlements
-                    </Button>
-                    <Button size="sm" onClick={handleSave} disabled={updateDoc.isPending || replaceItems.isPending}>
-                      Enregistrer
-                    </Button>
                   </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" className="h-8" onClick={handlePreviewPdf}>
+                    <Eye className="w-4 h-4 mr-1" />
+                    Aperçu PDF
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" onClick={handleExportPdf}>
+                    <FileDown className="w-4 h-4 mr-1" />
+                    Télécharger PDF
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" onClick={handleConvert} disabled={!nextTypeMap[data.document.doc_type] || convertDoc.isPending}>
+                    <ArrowRightLeft className="w-4 h-4 mr-1" />
+                    Convertir
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" onClick={handleDuplicate} disabled={createDoc.isPending || replaceItems.isPending}>
+                    <Copy className="w-4 h-4 mr-1" />
+                    Dupliquer
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" onClick={() => setPaymentHistoryOpen(true)}>
+                    <History className="w-4 h-4 mr-1" />
+                    Historique règlements
+                  </Button>
+                  <Button size="sm" className="h-8" onClick={handleSave} disabled={updateDoc.isPending || replaceItems.isPending}>
+                    Enregistrer
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">

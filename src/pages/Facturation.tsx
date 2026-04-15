@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,7 +46,7 @@ import {
   useSendFactDocumentWhatsApp,
   useUpdateFactDocument,
 } from '@/hooks/useFacturation';
-import { Activity, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileDown, Filter, Grid3X3, ListChecks, Mail, MessageCircle, PackagePlus, Plus, Search, Sparkles, Table2, Trash2, TriangleAlert, Users2 } from 'lucide-react';
+import { Activity, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileDown, Filter, Grid3X3, ListChecks, Mail, MessageCircle, PackagePlus, Plus, Search, Sparkles, Table2, TriangleAlert, Users2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -198,6 +198,8 @@ export default function Facturation() {
   }>>([]);
   const [newDocDialogOpen, setNewDocDialogOpen] = useState(false);
   const [newDocClientId, setNewDocClientId] = useState('');
+  const [newDocClientSearch, setNewDocClientSearch] = useState('');
+  const newDocClientSearchRef = useRef<HTMLInputElement | null>(null);
   const [newDocIssueDate, setNewDocIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [salesView, setSalesView] = useState<'table' | 'grid'>('table');
   const [rowsPerPage, setRowsPerPage] = useState(25);
@@ -287,18 +289,6 @@ export default function Facturation() {
       queryClient.invalidateQueries({ queryKey: ['facturation_stock_items'] });
     },
   });
-  const deleteFactDocument = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('fact_documents').delete().eq('id', id);
-      if (error) throw error;
-      return id;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['fact-documents'] });
-      queryClient.invalidateQueries({ queryKey: ['facturation_payment_events'] });
-    },
-  });
-
   useEffect(() => {
     if (!selectedId || !detailsQ.data?.document || detailsQ.data.document.id !== selectedId) return;
     const d = detailsQ.data.document;
@@ -1080,9 +1070,25 @@ export default function Facturation() {
 
   const openNewDocDialog = () => {
     setNewDocClientId('');
+    setNewDocClientSearch('');
     setNewDocIssueDate(new Date().toISOString().slice(0, 10));
     setNewDocDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!newDocDialogOpen) return;
+    const timer = window.setTimeout(() => {
+      newDocClientSearchRef.current?.focus();
+    }, 40);
+    return () => window.clearTimeout(timer);
+  }, [newDocDialogOpen]);
+
+  const newDocClientsFiltered = useMemo(() => {
+    const sorted = [...contactsRows.clients].sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+    const q = newDocClientSearch.trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter((c) => (c.name || '').toLowerCase().includes(q));
+  }, [contactsRows.clients, newDocClientSearch]);
 
   const handleQuickCreateDocument = () => {
     const selectedClient = contactsRows.clients.find((c) => c.id === newDocClientId);
@@ -1122,8 +1128,9 @@ export default function Facturation() {
     });
   };
 
-  const handleExportSelectedInvoicesPdf = async () => {
-    const selectedDocs = docs.filter((d) => selectedInvoiceIds.includes(d.id) && d.doc_type === 'facture');
+  const handleExportSelectedInvoicesPdf = async (forcedIds?: string[]) => {
+    const ids = forcedIds || selectedInvoiceIds;
+    const selectedDocs = docs.filter((d) => ids.includes(d.id) && d.doc_type === 'facture');
     if (selectedDocs.length === 0) return;
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     for (let index = 0; index < selectedDocs.length; index += 1) {
@@ -1226,7 +1233,11 @@ export default function Facturation() {
       pdf.text(companyName, 198, 286, { align: 'right' });
       pdf.setTextColor(0, 0, 0);
     }
-    pdf.save(`factures-selection-${new Date().toISOString().slice(0, 10)}.pdf`);
+    pdf.save(
+      selectedDocs.length === 1
+        ? `${selectedDocs[0].doc_number}.pdf`
+        : `factures-selection-${new Date().toISOString().slice(0, 10)}.pdf`
+    );
   };
 
   const handleSettleDebt = () => {
@@ -1273,10 +1284,8 @@ export default function Facturation() {
     );
   };
 
-  const handleDeleteInvoice = (id: string) => {
-    const ok = window.confirm('Supprimer cette facture ?');
-    if (!ok) return;
-    deleteFactDocument.mutate(id);
+  const handleDownloadInvoicePdf = async (id: string) => {
+    await handleExportSelectedInvoicesPdf([id]);
   };
 
   return (
@@ -1382,13 +1391,26 @@ export default function Facturation() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
                       <Label className="md:col-span-1">Client</Label>
-                      <div className="md:col-span-4">
+                      <div className="md:col-span-4 space-y-2">
+                        <Input
+                          ref={newDocClientSearchRef}
+                          value={newDocClientSearch}
+                          onChange={(e) => setNewDocClientSearch(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            e.preventDefault();
+                            if (!newDocClientId && newDocClientsFiltered.length > 0) {
+                              setNewDocClientId(newDocClientsFiltered[0].id);
+                            }
+                          }}
+                          placeholder="Rechercher client..."
+                        />
                         <Select value={newDocClientId} onValueChange={setNewDocClientId}>
                           <SelectTrigger>
                             <SelectValue placeholder="Choisir" />
                           </SelectTrigger>
                           <SelectContent>
-                            {contactsRows.clients.map((client) => (
+                            {newDocClientsFiltered.map((client) => (
                               <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                             ))}
                           </SelectContent>
@@ -1503,12 +1525,11 @@ export default function Facturation() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-red-600 border-red-300 hover:bg-red-50"
-                                    onClick={() => handleDeleteInvoice(doc.id)}
-                                    disabled={deleteFactDocument.isPending}
+                                    className="text-sky-600 border-sky-300 hover:bg-sky-50"
+                                    onClick={() => handleDownloadInvoicePdf(doc.id)}
                                   >
-                                    <Trash2 className="w-4 h-4 mr-1" />
-                                    Supprimer
+                                    <FileDown className="w-4 h-4 mr-1" />
+                                    Télécharger PDF
                                   </Button>
                                 </TableCell>
                               )}
