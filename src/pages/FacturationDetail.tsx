@@ -424,12 +424,12 @@ export default function FacturationDetail() {
 
     const palette = template === 'modern'
       ? {
-          header: [15, 23, 42] as [number, number, number],
-          headerAccent: [30, 41, 59] as [number, number, number],
-          card: [241, 245, 249] as [number, number, number],
-          cardAccent: [226, 232, 240] as [number, number, number],
-          table: [30, 41, 59] as [number, number, number],
-          text: [15, 23, 42] as [number, number, number],
+          header: [122, 36, 63] as [number, number, number],
+          headerAccent: [153, 61, 88] as [number, number, number],
+          card: [255, 255, 255] as [number, number, number],
+          cardAccent: [241, 241, 241] as [number, number, number],
+          table: [238, 238, 238] as [number, number, number],
+          text: [20, 20, 20] as [number, number, number],
         }
       : {
           header: [30, 64, 175] as [number, number, number],
@@ -448,17 +448,18 @@ export default function FacturationDetail() {
     const headerLogoY = 8;
     const headerLogoW = 28;
     const headerLogoH = 28;
+    const isModern = template === 'modern';
 
     // Print-ready: minimal ink, high contrast, fixed margins
-    doc.setFillColor(248, 250, 252);
+    doc.setFillColor(isModern ? 255 : 248, isModern ? 255 : 250, isModern ? 255 : 252);
     doc.rect(0, 0, pageW, pageH, 'F');
     if (includeHeader) {
       doc.setFillColor(palette.header[0], palette.header[1], palette.header[2]);
-      doc.rect(0, 0, pageW, 6, 'F');
+      doc.rect(0, 0, pageW, isModern ? 5 : 6, 'F');
 
       // Logo at extreme top-left
       doc.setDrawColor(203, 213, 225);
-      doc.setFillColor(255, 255, 255);
+      doc.setFillColor(isModern ? palette.header[0] : 255, isModern ? palette.header[1] : 255, isModern ? palette.header[2] : 255);
       doc.roundedRect(headerLogoX, headerLogoY, headerLogoW, headerLogoH, 2, 2, 'FD');
       if (logoDataUrl) {
         try {
@@ -477,10 +478,10 @@ export default function FacturationDetail() {
       // Company block directly below logo (left column)
       doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
+      doc.setFontSize(isModern ? 12.5 : 13);
       doc.text(companyName, headerLogoX, 42);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
+      doc.setFontSize(isModern ? 8.8 : 9);
       doc.text(`Email: ${companyEmail}`, headerLogoX, 47);
       doc.text(`Tél: ${companyPhone}`, headerLogoX, 52);
       const companyAddressLines = doc.splitTextToSize(`Adresse: ${companyAddress}`, 84);
@@ -492,19 +493,19 @@ export default function FacturationDetail() {
       doc.setFillColor(255, 255, 255);
       doc.roundedRect(124, 10, 74, 44, 2, 2, 'FD');
       doc.setFillColor(palette.header[0], palette.header[1], palette.header[2]);
-      doc.rect(124, 10, 74, 9, 'F');
+      doc.rect(124, 10, 74, isModern ? 8 : 9, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(14);
-      doc.text('FACTURE', 161, 16, { align: 'center' });
+      doc.setFontSize(isModern ? 13 : 14);
+      doc.text('FACTURE', 161, isModern ? 15.5 : 16, { align: 'center' });
       doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text(`N°: ${data.document.doc_number}`, 127, 27);
-      doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, 34);
-      doc.text(`Statut: ${data.document.status || status}`, 127, 41);
+      doc.setFontSize(isModern ? 9.3 : 10);
+      doc.text(`N°: ${data.document.doc_number}`, 127, isModern ? 25.5 : 27);
+      doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 32 : 34);
+      doc.text(`Statut: ${data.document.status || status}`, 127, isModern ? 38.5 : 41);
       if (data.document.due_date) {
-        doc.text(`Due Date: ${new Date(data.document.due_date).toLocaleDateString('fr-FR')}`, 127, 48);
+        doc.text(`Due Date: ${new Date(data.document.due_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 45 : 48);
       }
 
       // Separator between header and body
@@ -561,7 +562,7 @@ export default function FacturationDetail() {
         ];
       }),
       styles: { fontSize: 9.5, cellPadding: 2.8, lineColor: [203, 213, 225], lineWidth: 0.2, textColor: [15, 23, 42] },
-      headStyles: { fillColor: palette.table },
+      headStyles: template === 'modern' ? { fillColor: palette.table, textColor: [20, 20, 20] } : { fillColor: palette.table },
       alternateRowStyles: { fillColor: [248, 250, 252] },
     });
 
@@ -840,7 +841,14 @@ export default function FacturationDetail() {
                   <div className="space-y-1">
                     <Label>Montant partiel (obligatoire)</Label>
                     <div className="flex items-center gap-2">
-                      <Input type="number" value={partialAmount} onChange={(e) => setPartialAmount(e.target.value)} placeholder="Montant..." />
+                      <Input
+                        type="number"
+                        value={partialAmount}
+                        onChange={(e) => setPartialAmount(e.target.value)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        placeholder="Montant..."
+                      />
                       <Button size="sm" onClick={handleConfirmPartialPayment} disabled={!partialAmount || createEvent.isPending}>
                         Valider Partiel
                       </Button>
@@ -865,9 +873,36 @@ export default function FacturationDetail() {
                         items.map((item, idx) => (
                           <TableRow key={item.id}>
                             <TableCell><Input value={item.description} onChange={(e) => updateItem(idx, { description: e.target.value })} /></TableCell>
-                            <TableCell className="text-right"><Input type="number" value={item.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })} /></TableCell>
-                            <TableCell className="text-right"><Input type="number" value={item.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value || 0) })} /></TableCell>
-                            <TableCell className="text-right"><Input type="number" value={item.tax_rate} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value || 0) })} /></TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                type="number"
+                                value={item.quantity === 0 ? '' : item.quantity}
+                                onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })}
+                                onFocus={(e) => e.currentTarget.select()}
+                                className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="Qté"
+                              />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                type="number"
+                                value={item.unit_price === 0 ? '' : item.unit_price}
+                                onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value || 0) })}
+                                onFocus={(e) => e.currentTarget.select()}
+                                className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="PU"
+                              />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                type="number"
+                                value={item.tax_rate === 0 ? '' : item.tax_rate}
+                                onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value || 0) })}
+                                onFocus={(e) => e.currentTarget.select()}
+                                className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="TVA"
+                              />
+                            </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center gap-2 justify-end">
                                 <span>{(Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 - Number(item.discount_rate || 0) / 100) * (1 + Number(item.tax_rate || 0) / 100)).toFixed(2)} MAD</span>
@@ -889,9 +924,22 @@ export default function FacturationDetail() {
                   </Button>
                   <div className="flex items-center gap-2">
                     <Label>TVA globale</Label>
-                    <Input className="w-[100px]" type="number" value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value || 0))} />
+                    <Input
+                      className="w-[100px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      type="number"
+                      value={taxRate}
+                      onChange={(e) => setTaxRate(Number(e.target.value || 0))}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
                     <Label>Remise</Label>
-                    <Input className="w-[120px]" type="number" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value || 0))} />
+                    <Input
+                      className="w-[120px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      type="number"
+                      value={discountAmount === 0 ? '' : discountAmount}
+                      onChange={(e) => setDiscountAmount(Number(e.target.value || 0))}
+                      onFocus={(e) => e.currentTarget.select()}
+                      placeholder="Remise"
+                    />
                   </div>
                 </div>
                 <div className="space-y-1">

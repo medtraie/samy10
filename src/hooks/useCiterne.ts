@@ -49,6 +49,16 @@ export interface Approvisionnement {
   created_at: string;
 }
 
+export interface CiterneManualAdjustment {
+  id: string;
+  direction: 'plus' | 'minus';
+  quantity: number;
+  stock_before: number;
+  stock_after: number;
+  note: string | null;
+  created_at: string;
+}
+
 // ─── Citerne ─────────────────────────────────────────────────────
 export function useCiterne() {
   return useQuery({
@@ -94,6 +104,94 @@ export function useUpdateCiterne() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['citerne'] });
       toast({ title: 'Succès', description: 'Citerne mise à jour' });
+    },
+    onError: (e: Error) => {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useCiterneManualAdjustments() {
+  return useQuery({
+    queryKey: ['citerne_manual_adjustments'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'citerne_manual_adjustments')
+        .maybeSingle();
+      if (error) throw error;
+      const value = data?.value as unknown;
+      if (!Array.isArray(value)) return [] as CiterneManualAdjustment[];
+      return value as CiterneManualAdjustment[];
+    },
+  });
+}
+
+export function useCreateCiterneManualAdjustment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { citerne_id: string; direction: 'plus' | 'minus'; quantity: number; note?: string | null }) => {
+      const qty = Math.max(0, Number(input.quantity || 0));
+      if (!qty) throw new Error('Quantité invalide');
+
+      const { data: citerne, error: citerneErr } = await supabase
+        .from('citernes')
+        .select('*')
+        .eq('id', input.citerne_id)
+        .single();
+      if (citerneErr || !citerne) throw citerneErr || new Error('Citerne introuvable');
+
+      const stockBefore = Number(citerne.quantite_actuelle || 0);
+      const delta = input.direction === 'plus' ? qty : -qty;
+      const stockAfter = Math.max(0, stockBefore + delta);
+
+      const { error: updErr } = await supabase
+        .from('citernes')
+        .update({ quantite_actuelle: stockAfter, updated_at: new Date().toISOString() })
+        .eq('id', input.citerne_id);
+      if (updErr) throw updErr;
+
+      const { data: settingsRow, error: settingsErr } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'citerne_manual_adjustments')
+        .maybeSingle();
+      if (settingsErr) throw settingsErr;
+
+      const prev = Array.isArray(settingsRow?.value) ? (settingsRow?.value as CiterneManualAdjustment[]) : [];
+      const entry: CiterneManualAdjustment = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        direction: input.direction,
+        quantity: qty,
+        stock_before: stockBefore,
+        stock_after: stockAfter,
+        note: input.note?.trim() || null,
+        created_at: new Date().toISOString(),
+      };
+      const next = [entry, ...prev].slice(0, 200);
+
+      const { error: upsertErr } = await supabase
+        .from('app_settings')
+        .upsert(
+          {
+            key: 'citerne_manual_adjustments',
+            value: next as any,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key,user_id' }
+        );
+      if (upsertErr) throw upsertErr;
+
+      return entry;
+    },
+    onSuccess: (entry) => {
+      qc.invalidateQueries({ queryKey: ['citerne'] });
+      qc.invalidateQueries({ queryKey: ['citerne_manual_adjustments'] });
+      toast({
+        title: 'Ajustement manuel enregistré',
+        description: `${entry.direction === 'plus' ? '+' : '-'}${entry.quantity.toLocaleString()} L`,
+      });
     },
     onError: (e: Error) => {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });

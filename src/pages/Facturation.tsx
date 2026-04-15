@@ -1424,11 +1424,12 @@ export default function Facturation() {
                       PDF sélection
                     </Button>
                     <Input
-                      className="w-[160px] h-8"
+                      className="w-[160px] h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       type="number"
                       placeholder="Montant règlement"
                       value={settlementAmount}
                       onChange={(e) => setSettlementAmount(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
                     />
                     <Button size="sm" onClick={handleSettleDebt} disabled={selectedInvoiceIds.length !== 1 || !settlementAmount}>
                       Règlement dette
@@ -1955,7 +1956,14 @@ export default function Facturation() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Input type="number" placeholder="Montant HT" value={newPurchaseAmount} onChange={(e) => setNewPurchaseAmount(e.target.value)} />
+                    <Input
+                      type="number"
+                      className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      placeholder="Montant HT"
+                      value={newPurchaseAmount}
+                      onChange={(e) => setNewPurchaseAmount(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
                     <Button className="transition-all duration-200 hover:scale-[1.02] active:scale-95" onClick={handleCreatePurchaseOrderQuick} disabled={createPurchaseOrder.isPending}>Créer BC</Button>
                   </CardContent>
                 </Card>
@@ -1973,7 +1981,14 @@ export default function Facturation() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Input type="number" placeholder="Montant HT" value={newInvoiceAmount} onChange={(e) => setNewInvoiceAmount(e.target.value)} />
+                    <Input
+                      type="number"
+                      className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      placeholder="Montant HT"
+                      value={newInvoiceAmount}
+                      onChange={(e) => setNewInvoiceAmount(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
                     <Button className="transition-all duration-200 hover:scale-[1.02] active:scale-95" onClick={handleCreateSupplierInvoiceQuick} disabled={createSupplierInvoice.isPending}>Créer facture</Button>
                   </CardContent>
                 </Card>
@@ -2078,8 +2093,22 @@ export default function Facturation() {
                   <Input placeholder="Nom" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} />
                   <Input placeholder="Catégorie" value={newProductCategory} onChange={(e) => setNewProductCategory(e.target.value)} />
                   <Input placeholder="Unité" value={newProductUnit} onChange={(e) => setNewProductUnit(e.target.value)} />
-                  <Input placeholder="Prix" type="number" value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} />
-                  <Input placeholder="Stock initial" type="number" value={newProductStock} onChange={(e) => setNewProductStock(e.target.value)} />
+                  <Input
+                    placeholder="Prix"
+                    type="number"
+                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    value={newProductPrice}
+                    onChange={(e) => setNewProductPrice(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                  <Input
+                    placeholder="Stock initial"
+                    type="number"
+                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    value={newProductStock}
+                    onChange={(e) => setNewProductStock(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
                   <Button className="transition-all duration-200 hover:scale-[1.02] active:scale-95" onClick={handleAddCatalogItem} disabled={createCatalogItem.isPending}>
                     <PackagePlus className="w-4 h-4 mr-1" />
                     Ajouter
@@ -2248,8 +2277,22 @@ export default function Facturation() {
                           <SelectItem value="creative">Creative</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Input type="number" value={editor.tax_rate} onChange={(e) => setEditor((p) => ({ ...p, tax_rate: Number(e.target.value || 0) }))} placeholder="TVA %" />
-                      <Input type="number" value={editor.discount_amount} onChange={(e) => setEditor((p) => ({ ...p, discount_amount: Number(e.target.value || 0) }))} placeholder="Remise" />
+                      <Input
+                        type="number"
+                        className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={editor.tax_rate === 0 ? '' : editor.tax_rate}
+                        onChange={(e) => setEditor((p) => ({ ...p, tax_rate: Number(e.target.value || 0) }))}
+                        onFocus={(e) => e.currentTarget.select()}
+                        placeholder="TVA %"
+                      />
+                      <Input
+                        type="number"
+                        className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={editor.discount_amount === 0 ? '' : editor.discount_amount}
+                        onChange={(e) => setEditor((p) => ({ ...p, discount_amount: Number(e.target.value || 0) }))}
+                        onFocus={(e) => e.currentTarget.select()}
+                        placeholder="Remise"
+                      />
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2"><Switch checked={editor.show_header} onCheckedChange={(checked) => setEditor((p) => ({ ...p, show_header: checked }))} /><span className="text-xs">Header</span></div>
                         <div className="flex items-center gap-2"><Switch checked={editor.show_footer} onCheckedChange={(checked) => setEditor((p) => ({ ...p, show_footer: checked }))} /><span className="text-xs">Footer</span></div>
@@ -2267,9 +2310,30 @@ export default function Facturation() {
                       {editor.items.map((item, idx) => (
                         <div key={`line-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2">
                           <Input className="md:col-span-5" value={String(item.description || '')} placeholder="Description" onChange={(e) => updateItem(idx, { description: e.target.value })} />
-                          <Input className="md:col-span-2" type="number" value={Number(item.quantity || 0)} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })} />
-                          <Input className="md:col-span-2" type="number" value={Number(item.unit_price || 0)} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value || 0) })} />
-                          <Input className="md:col-span-2" type="number" value={Number(item.discount_rate || 0)} onChange={(e) => updateItem(idx, { discount_rate: Number(e.target.value || 0) })} />
+                          <Input
+                            className="md:col-span-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            type="number"
+                            value={Number(item.quantity || 0) === 0 ? '' : Number(item.quantity || 0)}
+                            onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })}
+                            onFocus={(e) => e.currentTarget.select()}
+                            placeholder="Qté"
+                          />
+                          <Input
+                            className="md:col-span-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            type="number"
+                            value={Number(item.unit_price || 0) === 0 ? '' : Number(item.unit_price || 0)}
+                            onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value || 0) })}
+                            onFocus={(e) => e.currentTarget.select()}
+                            placeholder="PU"
+                          />
+                          <Input
+                            className="md:col-span-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            type="number"
+                            value={Number(item.discount_rate || 0) === 0 ? '' : Number(item.discount_rate || 0)}
+                            onChange={(e) => updateItem(idx, { discount_rate: Number(e.target.value || 0) })}
+                            onFocus={(e) => e.currentTarget.select()}
+                            placeholder="Rem%"
+                          />
                           <Button className="md:col-span-1" type="button" variant="ghost" onClick={() => setEditor((p) => ({ ...p, items: p.items.filter((_, i) => i !== idx) }))}>×</Button>
                           {editor.custom_columns.length > 0 && (
                             <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-2">
