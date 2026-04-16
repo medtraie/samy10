@@ -1285,7 +1285,13 @@ export default function Facturation() {
   };
 
   const handleDownloadInvoicePdf = async (id: string) => {
-    await handleExportSelectedInvoicesPdf([id]);
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = `/facturation/${id}?download=1`;
+    document.body.appendChild(iframe);
+    window.setTimeout(() => {
+      iframe.remove();
+    }, 8000);
   };
 
   return (

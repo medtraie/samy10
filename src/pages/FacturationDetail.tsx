@@ -62,21 +62,6 @@ const composeNotesWithIce = (plainNotes: string, clientIce: string) => {
   return `${cleanedNotes}${cleanedNotes ? '\n' : ''}[ICE_CLIENT:${ice}]`;
 };
 
-const parseLegalInfo = (taxInfo: string | null | undefined) => {
-  const source = taxInfo || '';
-  const extract = (label: string) => {
-    const re = new RegExp(`${label}\\s*[:\\-]?\\s*([^\\n\\r]+?)\\s*(?=(RC|Patente|CNSS|ICE)\\s*[:\\-]|$)`, 'i');
-    const match = source.match(re);
-    return match?.[1]?.trim() || '-';
-  };
-  return {
-    rc: extract('RC'),
-    patente: extract('Patente'),
-    cnss: extract('CNSS'),
-    ice: extract('ICE'),
-  };
-};
-
 const UNITS_FR = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf'];
 const TEENS_FR = ['dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf'];
 const TENS_FR = ['', '', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante'];
@@ -564,30 +549,30 @@ export default function FacturationDetail() {
       const companyAddressLines = doc.splitTextToSize(`Adresse: ${companyAddress}`, 84);
       doc.text(companyAddressLines, headerLogoX, 57);
 
-      // FACTURE frame (clear and readable)
-      doc.setDrawColor(palette.header[0], palette.header[1], palette.header[2]);
-      doc.setLineWidth(0.6);
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(124, 10, 74, 44, 2, 2, 'FD');
-      doc.setFillColor(palette.header[0], palette.header[1], palette.header[2]);
-      doc.rect(124, 10, 74, isModern ? 8 : 9, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(isModern ? 13 : 14);
-      doc.text('FACTURE', 161, isModern ? 15.5 : 16, { align: 'center' });
-      doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(isModern ? 9.3 : 10);
-      doc.text(`N°: ${data.document.doc_number}`, 127, isModern ? 25.5 : 27);
-      doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 32 : 34);
-      doc.text(`Statut: ${data.document.status || status}`, 127, isModern ? 38.5 : 41);
-      if (data.document.due_date) {
-        doc.text(`Due Date: ${new Date(data.document.due_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 45 : 48);
-      }
-
       // Separator between header and body
       doc.setDrawColor(203, 213, 225);
       doc.line(12, 67, 198, 67);
+    }
+
+    // FACTURE frame stays visible even when en-tete is hidden
+    doc.setDrawColor(palette.header[0], palette.header[1], palette.header[2]);
+    doc.setLineWidth(0.6);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(124, 10, 74, 44, 2, 2, 'FD');
+    doc.setFillColor(palette.header[0], palette.header[1], palette.header[2]);
+    doc.rect(124, 10, 74, isModern ? 8 : 9, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(isModern ? 13 : 14);
+    doc.text('FACTURE', 161, isModern ? 15.5 : 16, { align: 'center' });
+    doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(isModern ? 9.3 : 10);
+    doc.text(`N°: ${data.document.doc_number}`, 127, isModern ? 25.5 : 27);
+    doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 32 : 34);
+    doc.text(`Statut: ${data.document.status || status}`, 127, isModern ? 38.5 : 41);
+    if (data.document.due_date) {
+      doc.text(`Due Date: ${new Date(data.document.due_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 45 : 48);
     }
 
     // Subtle watermark logo in body background
@@ -608,7 +593,7 @@ export default function FacturationDetail() {
     }
 
     // Body starts below header separator
-    const clientCardY = includeHeader ? 72 : 16;
+    const clientCardY = includeHeader ? 72 : 60;
     doc.setFillColor(palette.card[0], palette.card[1], palette.card[2]);
     doc.roundedRect(marginX, clientCardY, contentW, 40, 2, 2, 'F');
     doc.setFillColor(palette.cardAccent[0], palette.cardAccent[1], palette.cardAccent[2]);
@@ -702,14 +687,24 @@ export default function FacturationDetail() {
       doc.setFontSize(8.5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(71, 85, 105);
-      const legal = parseLegalInfo(companyTax);
-      const legalLine = `Infos fiscales société   RC: ${legal.rc}   Patente: ${legal.patente}   CNSS: ${legal.cnss}   ICE: ${legal.ice}`;
-      const taxLines = doc.splitTextToSize(legalLine, 184);
-      doc.text(taxLines, 12, 276);
+      const fiscalLine = `Informations fiscales: ${companyTax || '-'}`;
+      const fiscalLines = doc.splitTextToSize(fiscalLine, 170).slice(0, 2);
+      let footerY = 276;
+      fiscalLines.forEach((line) => {
+        doc.text(line, 105, footerY, { align: 'center' });
+        footerY += 3.8;
+      });
+      const addressLine = `Adresse: ${companyAddress || '-'}`;
+      const addressLines = doc.splitTextToSize(addressLine, 170).slice(0, 2);
+      footerY += 1.2;
+      addressLines.forEach((line) => {
+        doc.text(line, 105, footerY, { align: 'center' });
+        footerY += 3.8;
+      });
 
-      doc.setFontSize(8);
+      doc.setFontSize(7.6);
       doc.text(`Document généré le ${new Date().toLocaleString('fr-FR')}`, 12, 291);
-      doc.text(companyName, 198, 286, { align: 'right' });
+      doc.text(companyName, 198, 291, { align: 'right' });
       doc.setTextColor(0, 0, 0);
     }
 
