@@ -1285,7 +1285,7 @@ export default function Facturation() {
   };
 
   const handleDownloadInvoicePdf = async (id: string) => {
-    window.open(`/facturation/${id}?download=1`, '_blank');
+    await handleExportSelectedInvoicesPdf([id]);
   };
 
   return (

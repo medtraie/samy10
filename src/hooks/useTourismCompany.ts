@@ -10,6 +10,7 @@ export interface TourismCompanyProfile {
   address: string | null;
   tax_info: string | null;
   logo_url: string | null;
+  signature_url: string | null;
 }
 
 export const TOURISM_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
@@ -25,6 +26,7 @@ const normalizeProfile = (value: any): TourismCompanyProfile | null => {
     address: typeof value.address === 'string' ? value.address : null,
     tax_info: typeof value.tax_info === 'string' ? value.tax_info : null,
     logo_url: typeof value.logo_url === 'string' ? value.logo_url : null,
+    signature_url: typeof value.signature_url === 'string' ? value.signature_url : null,
   };
 };
 
@@ -81,6 +83,7 @@ export function useUpsertTourismCompanyProfile() {
         address: payload.address ?? null,
         tax_info: payload.tax_info ?? null,
         logo_url: payload.logo_url ?? null,
+        signature_url: payload.signature_url ?? null,
       };
 
       const { error: settingsError } = await supabase

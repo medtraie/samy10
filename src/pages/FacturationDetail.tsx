@@ -11,11 +11,11 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useConvertFactDocument, useCreateFactDocument, useCreateFactDocumentEvent, useFactDocumentDetails, useFactDocuments, useReplaceFactDocumentItems, useUpdateFactDocument, type FactDocumentType } from '@/hooks/useFacturation';
 import { ArrowLeft, ArrowRightLeft, Copy, Eye, FileDown, History, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
+import { useTourismCompanyProfile, useUpsertTourismCompanyProfile } from '@/hooks/useTourismCompany';
 import { supabase } from '@/integrations/supabase/client';
 
 type EditableItem = {
@@ -128,6 +128,7 @@ export default function FacturationDetail() {
   const { data, isLoading } = useFactDocumentDetails(documentId);
   const { data: docs = [] } = useFactDocuments();
   const { data: company } = useTourismCompanyProfile();
+  const upsertCompanyProfile = useUpsertTourismCompanyProfile();
   const updateDoc = useUpdateFactDocument();
   const replaceItems = useReplaceFactDocumentItems();
   const convertDoc = useConvertFactDocument();
@@ -148,11 +149,15 @@ export default function FacturationDetail() {
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  const [signatureUploading, setSignatureUploading] = useState(false);
+  const signatureInputRef = useRef<HTMLInputElement | null>(null);
   const [pdfTemplate, setPdfTemplate] = useState<PdfTemplate>('modern');
   const [partialAmount, setPartialAmount] = useState('');
   const [autoDownloadDone, setAutoDownloadDone] = useState(false);
   const [exportShowHeader, setExportShowHeader] = useState(true);
   const [exportShowFooter, setExportShowFooter] = useState(true);
+  const companySignatureUrl = (company as { signature_url?: string | null } | null)?.signature_url || null;
 
   useEffect(() => {
     if (!data?.document) return;
@@ -313,6 +318,76 @@ export default function FacturationDetail() {
       cancelled = true;
     };
   }, [company?.logo_url]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const signature = companySignatureUrl;
+      if (!signature) {
+        setSignatureDataUrl(null);
+        return;
+      }
+      try {
+        let blob: Blob | null = null;
+        if (!signature.startsWith('http')) {
+          const downloadRes = await supabase.storage.from('tourism-assets').download(signature);
+          if (!downloadRes.error && downloadRes.data) {
+            blob = downloadRes.data;
+          } else {
+            const signed = await supabase.storage.from('tourism-assets').createSignedUrl(signature, 60 * 10);
+            if (!signed.error && signed.data?.signedUrl) {
+              const response = await fetch(signed.data.signedUrl);
+              if (response.ok) blob = await response.blob();
+            }
+          }
+        } else {
+          const response = await fetch(signature);
+          if (response.ok) blob = await response.blob();
+        }
+        if (!blob) throw new Error('Unable to load signature image');
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        if (!cancelled) setSignatureDataUrl(dataUrl);
+      } catch {
+        if (!cancelled) setSignatureDataUrl(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [companySignatureUrl]);
+
+  const handleUploadSignatureImage = async (file: File) => {
+    if (!file) return;
+    setSignatureUploading(true);
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+      const safeExt = ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? ext : 'png';
+      const path = `facturation/signature-${Date.now()}.${safeExt}`;
+      const uploaded = await supabase.storage.from('tourism-assets').upload(path, file, {
+        upsert: true,
+        contentType: file.type || `image/${safeExt}`,
+      });
+      if (uploaded.error) throw uploaded.error;
+
+      upsertCompanyProfile.mutate({ signature_url: path });
+
+      const localDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      setSignatureDataUrl(localDataUrl);
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
 
   const updateItem = (idx: number, patch: Partial<EditableItem>) => {
     setItems((prev) => prev.map((item, i) => (i === idx ? { ...item, ...patch } : item)));
@@ -596,6 +671,29 @@ export default function FacturationDetail() {
     doc.text(`TOTAL T.T.C: ${totals.total.toFixed(2)} MAD`, 123, finalY + 35);
 
     if (includeFooter) {
+      const signatureBoxY = Math.min(Math.max(finalY + 52, 210), 232);
+      const signatureBoxX = 138;
+      const signatureBoxW = 60;
+      const signatureBoxH = 22;
+
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Cachet & Signature', 198, signatureBoxY - 2, { align: 'right' });
+      doc.rect(signatureBoxX, signatureBoxY, signatureBoxW, signatureBoxH);
+      if (signatureDataUrl) {
+        try {
+          const fmt = signatureDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(signatureDataUrl, fmt, signatureBoxX + 1, signatureBoxY + 1, signatureBoxW - 2, signatureBoxH - 2, undefined, 'FAST');
+        } catch {
+          // fallback silently
+        }
+      } else {
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text('Zone signature', signatureBoxX + signatureBoxW / 2, signatureBoxY + signatureBoxH / 2 + 1, { align: 'center' });
+        doc.setTextColor(71, 85, 105);
+      }
+
       // Footer: legal/tax info always at bottom with clear separation
       doc.setFillColor(248, 250, 252);
       doc.rect(0, pageH - 28, pageW, 28, 'F');
@@ -608,9 +706,6 @@ export default function FacturationDetail() {
       const legalLine = `Infos fiscales société   RC: ${legal.rc}   Patente: ${legal.patente}   CNSS: ${legal.cnss}   ICE: ${legal.ice}`;
       const taxLines = doc.splitTextToSize(legalLine, 184);
       doc.text(taxLines, 12, 276);
-
-      doc.text('Cachet & Signature', 198, 282, { align: 'right' });
-      doc.rect(162, 284, 36, 9);
 
       doc.setFontSize(8);
       doc.text(`Document généré le ${new Date().toLocaleString('fr-FR')}`, 12, 291);
@@ -734,10 +829,11 @@ export default function FacturationDetail() {
     const shouldAutoDownload = new URLSearchParams(location.search).get('download') === '1';
     if (!shouldAutoDownload || autoDownloadDone || !data?.document) return;
     if (company?.logo_url && !logoDataUrl) return;
+    if (companySignatureUrl && !signatureDataUrl) return;
     handleExportPdf();
     setAutoDownloadDone(true);
     navigate(location.pathname, { replace: true });
-  }, [location.search, location.pathname, autoDownloadDone, data?.document, company?.logo_url, logoDataUrl]);
+  }, [location.search, location.pathname, autoDownloadDone, data?.document, company?.logo_url, logoDataUrl, signatureDataUrl, companySignatureUrl]);
 
   return (
     <DashboardLayout>
@@ -788,6 +884,27 @@ export default function FacturationDetail() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    ref={signatureInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      void handleUploadSignatureImage(file);
+                      e.currentTarget.value = '';
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => signatureInputRef.current?.click()}
+                    disabled={signatureUploading || upsertCompanyProfile.isPending}
+                  >
+                    {signatureUploading || upsertCompanyProfile.isPending ? 'Upload...' : 'Téléverser Cachet & Signature'}
+                  </Button>
                   <Button size="sm" variant="outline" className="h-8" onClick={handlePreviewPdf}>
                     <Eye className="w-4 h-4 mr-1" />
                     Aperçu PDF
@@ -811,6 +928,27 @@ export default function FacturationDetail() {
                   <Button size="sm" className="h-8" onClick={handleSave} disabled={updateDoc.isPending || replaceItems.isPending}>
                     Enregistrer
                   </Button>
+                </div>
+                <div className="rounded-md border px-3 py-2 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="text-xs text-muted-foreground">
+                    Cachet & Signature (PDF): zone visible au-dessus du footer.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {signatureDataUrl ? (
+                      <img src={signatureDataUrl} alt="Signature preview" className="h-10 w-24 object-contain border rounded bg-white" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Aucune image chargée</span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => signatureInputRef.current?.click()}
+                      disabled={signatureUploading || upsertCompanyProfile.isPending}
+                    >
+                      Changer image
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
