@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useConvertFactDocument, useCreateFactDocument, useCreateFactDocumentEvent, useFactDocumentDetails, useFactDocuments, useReplaceFactDocumentItems, useUpdateFactDocument, type FactDocumentType } from '@/hooks/useFacturation';
 import { ArrowLeft, ArrowRightLeft, Copy, Eye, FileDown, History, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
@@ -123,6 +123,7 @@ const numberToFrenchWords = (n: number): string => {
 
 export default function FacturationDetail() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { documentId } = useParams<{ documentId: string }>();
   const { data, isLoading } = useFactDocumentDetails(documentId);
   const { data: docs = [] } = useFactDocuments();
@@ -149,6 +150,7 @@ export default function FacturationDetail() {
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [pdfTemplate, setPdfTemplate] = useState<PdfTemplate>('modern');
   const [partialAmount, setPartialAmount] = useState('');
+  const [autoDownloadDone, setAutoDownloadDone] = useState(false);
   const [exportShowHeader, setExportShowHeader] = useState(true);
   const [exportShowFooter, setExportShowFooter] = useState(true);
 
@@ -550,7 +552,7 @@ export default function FacturationDetail() {
 
     autoTable(doc, {
       startY: clientCardY + 46,
-      head: [['Description', 'Qty', 'Unit Price', 'Tax %', 'Total']],
+      head: [['Description', 'Qté', 'Prix H.T', 'TVA', 'Total H.T']],
       body: items.map((item) => {
         const lineTotal = Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 - Number(item.discount_rate || 0) / 100) * (1 + Number(item.tax_rate || 0) / 100);
         return [
@@ -581,17 +583,17 @@ export default function FacturationDetail() {
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Mode règlement: ${paymentStatus}`, 14, finalY + 16);
+    doc.text(`Mode de règlement: ${paymentStatus}`, 14, finalY + 16);
     doc.text(`Payé: ${paymentSummary.paid.toFixed(2)} MAD`, 14, finalY + 22);
     doc.text(`Reste: ${paymentSummary.remaining.toFixed(2)} MAD`, 14, finalY + 28);
     const amountWords = numberToFrenchWords(totals.total);
     doc.text(`Arrêtée à la somme de: ${amountWords} dirhams`, 14, finalY + 34);
 
-    doc.text(`Subtotal: ${totals.subtotal.toFixed(2)} MAD`, 123, finalY + 15);
-    doc.text(`VAT 20%: ${totals.tax.toFixed(2)} MAD`, 123, finalY + 21);
-    doc.text(`Discount: ${Number(discountAmount || 0).toFixed(2)} MAD`, 123, finalY + 27);
+    doc.text(`Total H.T: ${totals.subtotal.toFixed(2)} MAD`, 123, finalY + 15);
+    doc.text(`TVA 20%: ${totals.tax.toFixed(2)} MAD`, 123, finalY + 21);
+    doc.text(`Remise: ${Number(discountAmount || 0).toFixed(2)} MAD`, 123, finalY + 27);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Grand Total: ${totals.total.toFixed(2)} MAD`, 123, finalY + 35);
+    doc.text(`TOTAL T.T.C: ${totals.total.toFixed(2)} MAD`, 123, finalY + 35);
 
     if (includeFooter) {
       // Footer: legal/tax info always at bottom with clear separation
@@ -727,6 +729,15 @@ export default function FacturationDetail() {
       if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
     };
   }, [pdfPreviewUrl]);
+
+  useEffect(() => {
+    const shouldAutoDownload = new URLSearchParams(location.search).get('download') === '1';
+    if (!shouldAutoDownload || autoDownloadDone || !data?.document) return;
+    if (company?.logo_url && !logoDataUrl) return;
+    handleExportPdf();
+    setAutoDownloadDone(true);
+    navigate(location.pathname, { replace: true });
+  }, [location.search, location.pathname, autoDownloadDone, data?.document, company?.logo_url, logoDataUrl]);
 
   return (
     <DashboardLayout>

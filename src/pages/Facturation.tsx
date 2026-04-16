@@ -520,11 +520,11 @@ export default function Facturation() {
     const finalY = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || y + 60;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Sous-total: ${previewTotals.subtotal.toFixed(2)} MAD`, 140, finalY + 8);
-    doc.text(`TVA: ${previewTotals.tax.toFixed(2)} MAD`, 140, finalY + 13);
+    doc.text(`Total H.T: ${previewTotals.subtotal.toFixed(2)} MAD`, 140, finalY + 8);
+    doc.text(`TVA 20%: ${previewTotals.tax.toFixed(2)} MAD`, 140, finalY + 13);
     doc.text(`Remise: ${Number(editor.discount_amount || 0).toFixed(2)} MAD`, 140, finalY + 18);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total: ${previewTotals.total.toFixed(2)} MAD`, 140, finalY + 24);
+    doc.text(`TOTAL T.T.C: ${previewTotals.total.toFixed(2)} MAD`, 140, finalY + 24);
 
     if (editor.show_footer) {
       doc.setFont('helvetica', 'normal');
@@ -1186,7 +1186,7 @@ export default function Facturation() {
 
       autoTable(pdf, {
         startY: 83,
-        head: [['Description', 'Qté', 'PU', 'Rem%', 'TVA%', 'Total']],
+        head: [['Description', 'Qté', 'Prix H.T', 'Remise %', 'TVA', 'Total H.T']],
         body: items.map((it) => [
           it.description || '-',
           Number(it.quantity || 0).toFixed(2),
@@ -1212,19 +1212,19 @@ export default function Facturation() {
       pdf.rect(120, finalY + 6, 78, 36);
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(10);
-      pdf.text(`Sous-total: ${subtotal.toFixed(2)} MAD`, 123, finalY + 13);
-      pdf.text(`TVA: ${tax.toFixed(2)} MAD`, 123, finalY + 18);
+      pdf.text(`Total H.T: ${subtotal.toFixed(2)} MAD`, 123, finalY + 13);
+      pdf.text(`TVA 20%: ${tax.toFixed(2)} MAD`, 123, finalY + 18);
       pdf.text(`Remise: ${Number(d.discount_amount || 0).toFixed(2)} MAD`, 123, finalY + 23);
       pdf.text(`Payé: ${paid.toFixed(2)} MAD`, 123, finalY + 28);
       pdf.text(`Reste: ${remain.toFixed(2)} MAD`, 123, finalY + 33);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(`Total: ${Number(d.total_amount || 0).toFixed(2)} MAD`, 123, finalY + 40);
+      pdf.text(`TOTAL T.T.C: ${Number(d.total_amount || 0).toFixed(2)} MAD`, 123, finalY + 40);
 
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
       const taxLines = pdf.splitTextToSize(`Infos fiscales: ${companyTax}`, 100);
       pdf.text(taxLines, 12, finalY + 14);
-      pdf.text(`Mode règlement: ${paymentStatus}`, 12, finalY + 26);
+      pdf.text(`Mode de règlement: ${paymentStatus}`, 12, finalY + 26);
       pdf.setDrawColor(226, 232, 240);
       pdf.line(12, 280, 198, 280);
       pdf.setFontSize(8);
@@ -1285,7 +1285,7 @@ export default function Facturation() {
   };
 
   const handleDownloadInvoicePdf = async (id: string) => {
-    await handleExportSelectedInvoicesPdf([id]);
+    window.open(`/facturation/${id}?download=1`, '_blank');
   };
 
   return (
