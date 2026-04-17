@@ -39,7 +39,7 @@ const normalizeProfileField = (value: unknown): string | null => {
 const normalizeProfile = (value: any): TourismCompanyProfile | null => {
   if (!value || typeof value !== 'object') return null;
   return {
-    id: TOURISM_COMPANY_ID,
+    id: typeof value.id === 'string' ? value.id : TOURISM_COMPANY_ID,
     company_name: normalizeProfileField(value.company_name),
     contact_email: normalizeProfileField(value.contact_email),
     contact_phone: normalizeProfileField(value.contact_phone),
@@ -48,6 +48,14 @@ const normalizeProfile = (value: any): TourismCompanyProfile | null => {
     logo_url: normalizeProfileField(value.logo_url),
     signature_url: normalizeProfileField(value.signature_url),
   };
+};
+
+const requireUserId = async (): Promise<string> => {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  const userId = data.user?.id;
+  if (!userId) throw new Error('Utilisateur non authentifié');
+  return userId;
 };
 
 const mergeProfiles = (
@@ -85,39 +93,35 @@ const buildProfilePayload = (
   return nextProfile;
 };
 
-const fetchCompanyProfileFromTable = async (): Promise<TourismCompanyProfile | null> => {
+const fetchCompanyProfileFromTable = async (userId: string): Promise<TourismCompanyProfile | null> => {
   const { data: singleton, error } = await supabase
     .from('tourism_company_profile')
     .select('*')
-    .eq('id', TOURISM_COMPANY_ID)
-    .maybeSingle();
-
-  if (!error) return (singleton as TourismCompanyProfile | null) ?? null;
-
-  const { data: latest, error: latestError } = await supabase
-    .from('tourism_company_profile')
-    .select('*')
-    .order('created_at', { ascending: false })
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (latestError) throw latestError;
-  return (latest as TourismCompanyProfile | null) ?? null;
+
+  if (error) throw error;
+  return (singleton as TourismCompanyProfile | null) ?? null;
 };
 
 export async function fetchCompanyProfile(): Promise<TourismCompanyProfile | null> {
+  const userId = await requireUserId();
   const { data: settingsData, error: settingsError } = await supabase
     .from('app_settings')
     .select('value')
     .eq('key', COMPANY_PROFILE_SETTINGS_KEY)
+    .eq('user_id', userId)
     .maybeSingle();
 
   if (settingsError) {
     // If settings is unavailable, fallback directly to table profile.
-    return await fetchCompanyProfileFromTable();
+    return await fetchCompanyProfileFromTable(userId);
   }
 
   const fromSettings = normalizeProfile(settingsData?.value);
-  const fromTable = await fetchCompanyProfileFromTable();
+  const fromTable = await fetchCompanyProfileFromTable(userId);
   // Root fix: never lose existing company fields when one source is partial.
   return mergeProfiles(fromSettings, fromTable);
 }
@@ -135,12 +139,14 @@ export function useUpsertTourismCompanyProfile() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: Partial<TourismCompanyProfile>) => {
+      const userId = await requireUserId();
       const { data: settingsData } = await supabase
         .from('app_settings')
         .select('value')
         .eq('key', COMPANY_PROFILE_SETTINGS_KEY)
+        .eq('user_id', userId)
         .maybeSingle();
-      const tableProfile = await fetchCompanyProfileFromTable();
+      const tableProfile = await fetchCompanyProfileFromTable(userId);
       const fromSettings = normalizeProfile(settingsData?.value);
       const currentProfile = mergeProfiles(fromSettings, tableProfile);
       // Root fix: only fields explicitly present in payload can overwrite current data.
@@ -151,6 +157,7 @@ export function useUpsertTourismCompanyProfile() {
         .upsert(
           {
             key: COMPANY_PROFILE_SETTINGS_KEY,
+            user_id: userId,
             value: profilePayload as any,
             updated_at: new Date().toISOString(),
             description: 'Profil société global',
@@ -160,17 +167,39 @@ export function useUpsertTourismCompanyProfile() {
 
       if (settingsError) throw settingsError;
 
-      const dataToUpsert = {
+      const baseProfileData = {
         ...profilePayload,
-        id: TOURISM_COMPANY_ID,
+        user_id: userId,
         updated_at: new Date().toISOString(),
       };
-
-      const { data, error } = await supabase
+      const { data: existingRow } = await supabase
         .from('tourism_company_profile')
-        .upsert(dataToUpsert, { onConflict: 'id' })
-        .select()
+        .select('id')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
+
+      let data: unknown = null;
+      let error: Error | null = null;
+      if (existingRow?.id) {
+        const result = await supabase
+          .from('tourism_company_profile')
+          .update(baseProfileData)
+          .eq('id', existingRow.id)
+          .select()
+          .maybeSingle();
+        data = result.data;
+        error = result.error as Error | null;
+      } else {
+        const result = await supabase
+          .from('tourism_company_profile')
+          .insert(baseProfileData)
+          .select()
+          .maybeSingle();
+        data = result.data;
+        error = result.error as Error | null;
+      }
 
       // Some environments enforce RLS on tourism_company_profile.
       // In this case, app_settings already stores the profile and remains the source of truth.
@@ -188,6 +217,7 @@ export function useUpsertTourismCompanyProfile() {
         .from('app_settings')
         .select('value')
         .eq('key', COMPANY_PROFILE_SETTINGS_KEY)
+        .eq('user_id', userId)
         .maybeSingle();
       const refreshedFromSettings = normalizeProfile(refreshedSettingsData?.value);
       return mergeProfiles(refreshedFromSettings, tableProfile);
