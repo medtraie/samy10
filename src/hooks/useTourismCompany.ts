@@ -184,13 +184,13 @@ export function useUpsertTourismCompanyProfile() {
       const fromTable = data as TourismCompanyProfile | null;
       if (fromTable) return fromTable;
 
-      const { data: settingsData } = await supabase
+      const { data: refreshedSettingsData } = await supabase
         .from('app_settings')
         .select('value')
         .eq('key', COMPANY_PROFILE_SETTINGS_KEY)
         .maybeSingle();
-      const fromSettings = normalizeProfile(settingsData?.value);
-      return mergeProfiles(fromSettings, tableProfile);
+      const refreshedFromSettings = normalizeProfile(refreshedSettingsData?.value);
+      return mergeProfiles(refreshedFromSettings, tableProfile);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tourism-company-profile'] });
