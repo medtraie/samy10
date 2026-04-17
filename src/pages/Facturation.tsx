@@ -645,6 +645,7 @@ export default function Facturation() {
   }, [paymentEventsQ.data]);
 
   const invoiceRemaining = (doc: FactDocument) => {
+    if (doc.status === 'paid') return 0;
     const paid = invoicePaidById.get(doc.id) || 0;
     return Math.max(0, Number(doc.total_amount || 0) - paid);
   };
@@ -1287,11 +1288,16 @@ export default function Facturation() {
   const handleDownloadInvoicePdf = async (id: string) => {
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
+    const cleanup = () => {
+      if (iframe.parentNode) iframe.remove();
+    };
+    iframe.addEventListener('load', () => {
+      window.setTimeout(cleanup, 3000);
+    });
     iframe.src = `/facturation/${id}?download=1`;
     document.body.appendChild(iframe);
-    window.setTimeout(() => {
-      iframe.remove();
-    }, 8000);
+    // Fallback cleanup in case load event is delayed.
+    window.setTimeout(cleanup, 30000);
   };
 
   return (

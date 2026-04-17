@@ -40,6 +40,30 @@ const paymentWorkflow = [
   { value: 'unpaid', label: 'Non payé' },
   { value: 'partial', label: 'Partiel' },
 ] as const;
+const docTypeLabels: Record<FactDocumentType, string> = {
+  devis: 'Devis',
+  bon_commande: 'Commande',
+  bon_livraison: 'Livraison',
+  facture: 'Facture',
+};
+const nonInvoiceWorkflow: Record<Exclude<FactDocumentType, 'facture'>, Array<{ value: string; label: string }>> = {
+  devis: [
+    { value: 'draft', label: 'Brouillon' },
+    { value: 'sent', label: 'Envoyé' },
+    { value: 'approved', label: 'Accepté' },
+    { value: 'rejected', label: 'Refusé' },
+  ],
+  bon_commande: [
+    { value: 'draft', label: 'Brouillon' },
+    { value: 'sent', label: 'Envoyée' },
+    { value: 'approved', label: 'Confirmée' },
+  ],
+  bon_livraison: [
+    { value: 'draft', label: 'Brouillon' },
+    { value: 'sent', label: 'Expédiée' },
+    { value: 'delivered', label: 'Livrée' },
+  ],
+};
 
 const PDF_TEMPLATES = ['classic', 'modern'] as const;
 type PdfTemplate = (typeof PDF_TEMPLATES)[number];
@@ -112,7 +136,7 @@ export default function FacturationDetail() {
   const { documentId } = useParams<{ documentId: string }>();
   const { data, isLoading } = useFactDocumentDetails(documentId);
   const { data: docs = [] } = useFactDocuments();
-  const { data: company } = useTourismCompanyProfile();
+  const { data: company, isLoading: companyLoading } = useTourismCompanyProfile();
   const upsertCompanyProfile = useUpsertTourismCompanyProfile();
   const updateDoc = useUpdateFactDocument();
   const replaceItems = useReplaceFactDocumentItems();
@@ -157,6 +181,11 @@ export default function FacturationDetail() {
     setStatus(data.document.status || 'draft');
     setExportShowHeader(Boolean(data.document.show_header));
     setExportShowFooter(Boolean(data.document.show_footer));
+    setPdfTemplate(
+      PDF_TEMPLATES.includes(data.document.template_type as PdfTemplate)
+        ? (data.document.template_type as PdfTemplate)
+        : 'modern'
+    );
     setItems(
       data.items.length > 0
         ? data.items.map((item) => ({
@@ -179,15 +208,20 @@ export default function FacturationDetail() {
     return { subtotal, tax, total };
   }, [items, taxRate, discountAmount]);
 
+  const currentDocType = data?.document?.doc_type ?? 'facture';
+  const isInvoice = currentDocType === 'facture';
+  const currentDocLabel = docTypeLabels[currentDocType];
+  const workflowSteps = isInvoice ? paymentWorkflow : nonInvoiceWorkflow[currentDocType as Exclude<FactDocumentType, 'facture'>];
+
   const clientInvoices = useMemo(() => {
     const client = (data?.document?.client_name || '').trim().toLowerCase();
     if (!client) return [];
     const all = docs
-      .filter((d) => d.doc_type === 'facture' && (d.client_name || '').trim().toLowerCase() === client)
+      .filter((d) => d.doc_type === currentDocType && (d.client_name || '').trim().toLowerCase() === client)
       .sort((a, b) => new Date(b.issue_date).getTime() - new Date(a.issue_date).getTime());
-    if (timelineInvoiceFilter === 'all') return all;
+    if (!isInvoice || timelineInvoiceFilter === 'all') return all;
     return all.filter((d) => d.status === timelineInvoiceFilter);
-  }, [docs, data?.document?.client_name, timelineInvoiceFilter]);
+  }, [docs, data?.document?.client_name, currentDocType, isInvoice, timelineInvoiceFilter]);
 
   const paymentHistoryRows = useMemo(() => {
     if (!data?.document) return [];
@@ -473,12 +507,50 @@ export default function FacturationDetail() {
 
   const buildInvoicePdf = (
     template: PdfTemplate = pdfTemplate,
-    options?: { includeHeader?: boolean; includeFooter?: boolean }
+    options?: {
+      includeHeader?: boolean;
+      includeFooter?: boolean;
+      snapshot?: {
+        client_name?: string | null;
+        client_email?: string | null;
+        client_phone?: string | null;
+        client_address?: string | null;
+        notes?: string | null;
+        tax_rate?: number | null;
+        discount_amount?: number | null;
+        status?: string | null;
+        items?: EditableItem[];
+      };
+    }
   ) => {
     if (!data?.document) return;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const includeHeader = options?.includeHeader ?? true;
     const includeFooter = options?.includeFooter ?? true;
+    const sourceClientName = options?.snapshot?.client_name ?? clientName;
+    const sourceClientEmail = options?.snapshot?.client_email ?? clientEmail;
+    const sourceClientPhone = options?.snapshot?.client_phone ?? clientPhone;
+    const sourceClientAddress = options?.snapshot?.client_address ?? clientAddress;
+    const sourceClientIce = extractClientIceFromNotes(options?.snapshot?.notes ?? composeNotesWithIce(notes, clientIce));
+    const sourceItems = options?.snapshot?.items ?? items;
+    const sourceTaxRate = Number(options?.snapshot?.tax_rate ?? taxRate ?? 0);
+    const sourceDiscountAmount = Number(options?.snapshot?.discount_amount ?? discountAmount ?? 0);
+    const sourceStatus = options?.snapshot?.status || status;
+    const sourceTotals = (() => {
+      const subtotal = sourceItems.reduce(
+        (acc, item) =>
+          acc +
+          Number(item.quantity || 0) *
+            Number(item.unit_price || 0) *
+            (1 - Number(item.discount_rate || 0) / 100),
+        0
+      );
+      const tax = subtotal * (sourceTaxRate / 100);
+      const total = subtotal + tax - sourceDiscountAmount;
+      return { subtotal, tax, total };
+    })();
+    const sourceDocType = data.document.doc_type;
+    const sourceDocLabel = docTypeLabels[sourceDocType] || 'Facture';
 
     const companyName = company?.company_name || 'Société';
     const companyAddress = company?.address || '-';
@@ -566,13 +638,13 @@ export default function FacturationDetail() {
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isModern ? 13 : 14);
-    doc.text('FACTURE', 161, isModern ? 15.5 : 16, { align: 'center' });
+    doc.text(sourceDocLabel.toUpperCase(), 161, isModern ? 15.5 : 16, { align: 'center' });
     doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isModern ? 9.3 : 10);
     doc.text(`N°: ${data.document.doc_number}`, 127, isModern ? 25.5 : 27);
     doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 32 : 34);
-    doc.text(`Statut: ${data.document.status || status}`, 127, isModern ? 38.5 : 41);
+    doc.text(`Statut: ${sourceStatus || data.document.status || '-'}`, 127, isModern ? 38.5 : 41);
     if (data.document.due_date) {
       doc.text(`Due Date: ${new Date(data.document.due_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 45 : 48);
     }
@@ -605,17 +677,17 @@ export default function FacturationDetail() {
     doc.text('Informations client', marginX + 2, clientCardY + 4.5);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
-    doc.text(`Nom: ${clientName || '-'}`, marginX + 2, clientCardY + 12);
-    doc.text(`Email: ${clientEmail || '-'}`, marginX + 2, clientCardY + 17);
-    doc.text(`Téléphone: ${clientPhone || '-'}`, marginX + 2, clientCardY + 22);
-    doc.text(`ICE: ${clientIce || '-'}`, marginX + 2, clientCardY + 27);
-    const clientAddressLines = doc.splitTextToSize(`Adresse: ${clientAddress || '-'}`, 178);
+    doc.text(`Nom: ${sourceClientName || '-'}`, marginX + 2, clientCardY + 12);
+    doc.text(`Email: ${sourceClientEmail || '-'}`, marginX + 2, clientCardY + 17);
+    doc.text(`Téléphone: ${sourceClientPhone || '-'}`, marginX + 2, clientCardY + 22);
+    doc.text(`ICE: ${sourceClientIce || '-'}`, marginX + 2, clientCardY + 27);
+    const clientAddressLines = doc.splitTextToSize(`Adresse: ${sourceClientAddress || '-'}`, 178);
     doc.text(clientAddressLines, marginX + 2, clientCardY + 34);
 
     autoTable(doc, {
       startY: clientCardY + 46,
       head: [['Description', 'Qté', 'Prix H.T', 'TVA', 'Total H.T']],
-      body: items.map((item) => {
+      body: sourceItems.map((item) => {
         const lineTotal = Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 - Number(item.discount_rate || 0) / 100) * (1 + Number(item.tax_rate || 0) / 100);
         return [
           item.description || '-',
@@ -648,14 +720,14 @@ export default function FacturationDetail() {
     doc.text(`Mode de règlement: ${paymentStatus}`, 14, finalY + 16);
     doc.text(`Payé: ${paymentSummary.paid.toFixed(2)} MAD`, 14, finalY + 22);
     doc.text(`Reste: ${paymentSummary.remaining.toFixed(2)} MAD`, 14, finalY + 28);
-    const amountWords = numberToFrenchWords(totals.total);
+    const amountWords = numberToFrenchWords(sourceTotals.total);
     doc.text(`Arrêtée à la somme de: ${amountWords} dirhams`, 14, finalY + 34);
 
-    doc.text(`Total H.T: ${totals.subtotal.toFixed(2)} MAD`, 123, finalY + 15);
-    doc.text(`TVA 20%: ${totals.tax.toFixed(2)} MAD`, 123, finalY + 21);
-    doc.text(`Remise: ${Number(discountAmount || 0).toFixed(2)} MAD`, 123, finalY + 27);
+    doc.text(`Total H.T: ${sourceTotals.subtotal.toFixed(2)} MAD`, 123, finalY + 15);
+    doc.text(`TVA 20%: ${sourceTotals.tax.toFixed(2)} MAD`, 123, finalY + 21);
+    doc.text(`Remise: ${sourceDiscountAmount.toFixed(2)} MAD`, 123, finalY + 27);
     doc.setFont('helvetica', 'bold');
-    doc.text(`TOTAL T.T.C: ${totals.total.toFixed(2)} MAD`, 123, finalY + 35);
+    doc.text(`TOTAL T.T.C: ${sourceTotals.total.toFixed(2)} MAD`, 123, finalY + 35);
 
     if (includeFooter) {
       const signatureBoxY = Math.min(Math.max(finalY + 52, 210), 232);
@@ -825,19 +897,48 @@ export default function FacturationDetail() {
   useEffect(() => {
     const shouldAutoDownload = new URLSearchParams(location.search).get('download') === '1';
     if (!shouldAutoDownload || autoDownloadDone || !data?.document) return;
+    if (companyLoading) return;
     if (company?.logo_url && !logoDataUrl) return;
     if (companySignatureUrl && !signatureDataUrl) return;
-    handleExportPdf();
+    const docTemplate = PDF_TEMPLATES.includes(data.document.template_type as PdfTemplate)
+      ? (data.document.template_type as PdfTemplate)
+      : 'modern';
+    const snapshotItems: EditableItem[] = (data.items || []).map((item) => ({
+      id: item.id,
+      description: item.description || '',
+      quantity: Number(item.quantity || 0),
+      unit: item.unit || 'u',
+      unit_price: Number(item.unit_price || 0),
+      discount_rate: Number(item.discount_rate || 0),
+      tax_rate: Number(item.tax_rate || 20),
+    }));
+    const pdf = buildInvoicePdf(docTemplate, {
+      includeHeader: Boolean(data.document.show_header),
+      includeFooter: Boolean(data.document.show_footer),
+      snapshot: {
+        client_name: data.document.client_name,
+        client_email: data.document.client_email,
+        client_phone: data.document.client_phone,
+        client_address: data.document.client_address,
+        notes: data.document.notes,
+        tax_rate: Number(data.document.tax_rate || 20),
+        discount_amount: Number(data.document.discount_amount || 0),
+        status: data.document.status,
+        items: snapshotItems,
+      },
+    });
+    if (!pdf) return;
+    pdf.save(`${data.document.doc_number}.pdf`);
     setAutoDownloadDone(true);
     navigate(location.pathname, { replace: true });
-  }, [location.search, location.pathname, autoDownloadDone, data?.document, company?.logo_url, logoDataUrl, signatureDataUrl, companySignatureUrl]);
+  }, [location.search, location.pathname, autoDownloadDone, data?.document, data?.items, companyLoading, company?.logo_url, logoDataUrl, signatureDataUrl, companySignatureUrl]);
 
   return (
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">Détail Document</h1>
+                    <h1 className="text-2xl font-bold">Détail {currentDocLabel}</h1>
             <p className="text-muted-foreground">Consultation détaillée du document de facturation</p>
           </div>
           <Button variant="outline" onClick={() => navigate('/facturation')}>
@@ -857,7 +958,7 @@ export default function FacturationDetail() {
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <div>
                     <CardTitle>{data.document.doc_number}</CardTitle>
-                    <CardDescription>{data.document.doc_type} · {new Date(data.document.issue_date).toLocaleDateString('fr-FR')}</CardDescription>
+                    <CardDescription>{currentDocLabel} · {new Date(data.document.issue_date).toLocaleDateString('fr-FR')}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap md:justify-end">
                     <Badge variant="outline">{data.document.status}</Badge>
@@ -918,10 +1019,12 @@ export default function FacturationDetail() {
                     <Copy className="w-4 h-4 mr-1" />
                     Dupliquer
                   </Button>
-                  <Button size="sm" variant="outline" className="h-8" onClick={() => setPaymentHistoryOpen(true)}>
-                    <History className="w-4 h-4 mr-1" />
-                    Historique règlements
-                  </Button>
+                  {isInvoice ? (
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => setPaymentHistoryOpen(true)}>
+                      <History className="w-4 h-4 mr-1" />
+                      Historique règlements
+                    </Button>
+                  ) : null}
                   <Button size="sm" className="h-8" onClick={handleSave} disabled={updateDoc.isPending || replaceItems.isPending}>
                     Enregistrer
                   </Button>
@@ -963,9 +1066,9 @@ export default function FacturationDetail() {
                     <Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
                   </div>
                   <div className="space-y-1 md:col-span-2">
-                    <Label>Workflow statut</Label>
+                    <Label>{isInvoice ? 'Workflow statut' : `Workflow ${currentDocLabel.toLowerCase()}`}</Label>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {paymentWorkflow.map((step) => (
+                      {workflowSteps.map((step) => (
                         <Button
                           key={step.value}
                           size="sm"
@@ -986,22 +1089,24 @@ export default function FacturationDetail() {
                     <Label>ICE client</Label>
                     <Input value={clientIce} onChange={(e) => setClientIce(e.target.value)} placeholder="ICE..." />
                   </div>
-                  <div className="space-y-1">
-                    <Label>Montant partiel (obligatoire)</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={partialAmount}
-                        onChange={(e) => setPartialAmount(e.target.value)}
-                        onFocus={(e) => e.currentTarget.select()}
-                        className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        placeholder="Montant..."
-                      />
-                      <Button size="sm" onClick={handleConfirmPartialPayment} disabled={!partialAmount || createEvent.isPending}>
-                        Valider Partiel
-                      </Button>
+                  {isInvoice ? (
+                    <div className="space-y-1">
+                      <Label>Montant partiel (obligatoire)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={partialAmount}
+                          onChange={(e) => setPartialAmount(e.target.value)}
+                          onFocus={(e) => e.currentTarget.select()}
+                          className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          placeholder="Montant..."
+                        />
+                        <Button size="sm" onClick={handleConfirmPartialPayment} disabled={!partialAmount || createEvent.isPending}>
+                          Valider Partiel
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                 </div>
                 <div className="border rounded-md overflow-hidden">
                   <Table>
@@ -1105,7 +1210,7 @@ export default function FacturationDetail() {
             <Dialog open={pdfPreviewOpen} onOpenChange={setPdfPreviewOpen}>
               <DialogContent className="max-w-5xl">
                 <DialogHeader>
-                  <DialogTitle>Aperçu PDF - Facture</DialogTitle>
+                  <DialogTitle>{`Aperçu PDF - ${currentDocLabel}`}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-2">
                   <div className="flex justify-end">
@@ -1115,7 +1220,7 @@ export default function FacturationDetail() {
                     </Button>
                   </div>
                   {pdfPreviewUrl ? (
-                    <iframe title="Aperçu PDF facture" src={pdfPreviewUrl} className="w-full h-[70vh] border rounded-md bg-white" />
+                    <iframe title={`Aperçu PDF ${currentDocLabel}`} src={pdfPreviewUrl} className="w-full h-[70vh] border rounded-md bg-white" />
                   ) : (
                     <div className="text-sm text-muted-foreground">Aperçu indisponible.</div>
                   )}
@@ -1178,18 +1283,26 @@ export default function FacturationDetail() {
             <Card className="xl:col-span-4">
               <CardHeader>
                 <CardTitle>Timeline</CardTitle>
-                <CardDescription>Historique + toutes les factures du client</CardDescription>
+                <CardDescription>
+                  {isInvoice ? 'Historique + toutes les factures du client' : `Historique + tous les ${currentDocLabel.toLowerCase()}s du client`}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Factures du client</div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button size="sm" variant={timelineInvoiceFilter === 'all' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('all')}>Toutes les factures</Button>
-                  <Button size="sm" variant={timelineInvoiceFilter === 'paid' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('paid')}>Payées</Button>
-                  <Button size="sm" variant={timelineInvoiceFilter === 'unpaid' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('unpaid')}>Non payé</Button>
-                  <Button size="sm" variant={timelineInvoiceFilter === 'partial' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('partial')}>Partiel</Button>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {isInvoice ? 'Factures du client' : `${currentDocLabel}s du client`}
                 </div>
+                {isInvoice ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button size="sm" variant={timelineInvoiceFilter === 'all' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('all')}>Toutes les factures</Button>
+                    <Button size="sm" variant={timelineInvoiceFilter === 'paid' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('paid')}>Payées</Button>
+                    <Button size="sm" variant={timelineInvoiceFilter === 'unpaid' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('unpaid')}>Non payé</Button>
+                    <Button size="sm" variant={timelineInvoiceFilter === 'partial' ? 'default' : 'outline'} onClick={() => setTimelineInvoiceFilter('partial')}>Partiel</Button>
+                  </div>
+                ) : null}
                 {clientInvoices.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Aucune facture pour ce client.</div>
+                  <div className="text-sm text-muted-foreground">
+                    {isInvoice ? 'Aucune facture pour ce client.' : `Aucun ${currentDocLabel.toLowerCase()} pour ce client.`}
+                  </div>
                 ) : (
                   clientInvoices.map((inv) => (
                     <button
