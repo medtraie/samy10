@@ -360,7 +360,9 @@ export default function FacturationDetail() {
       });
       if (uploaded.error) throw uploaded.error;
 
-      upsertCompanyProfile.mutate({ signature_url: path });
+      await upsertCompanyProfile.mutateAsync({
+        signature_url: path,
+      });
 
       const localDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
