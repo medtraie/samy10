@@ -166,6 +166,7 @@ export default function FacturationDetail() {
   const [autoDownloadDone, setAutoDownloadDone] = useState(false);
   const [exportShowHeader, setExportShowHeader] = useState(true);
   const [exportShowFooter, setExportShowFooter] = useState(true);
+  const [exportShowSignature, setExportShowSignature] = useState(true);
   const companySignatureUrl = (company as { signature_url?: string | null } | null)?.signature_url || null;
 
   useEffect(() => {
@@ -500,7 +501,11 @@ export default function FacturationDetail() {
   };
 
   const handleExportPdf = () => {
-    const pdf = buildInvoicePdf(pdfTemplate, { includeHeader: exportShowHeader, includeFooter: exportShowFooter });
+    const pdf = buildInvoicePdf(pdfTemplate, {
+      includeHeader: exportShowHeader,
+      includeFooter: exportShowFooter,
+      includeSignature: exportShowSignature,
+    });
     if (!pdf || !data?.document) return;
     pdf.save(`${data.document.doc_number}.pdf`);
   };
@@ -510,6 +515,7 @@ export default function FacturationDetail() {
     options?: {
       includeHeader?: boolean;
       includeFooter?: boolean;
+      includeSignature?: boolean;
       snapshot?: {
         client_name?: string | null;
         client_email?: string | null;
@@ -527,6 +533,7 @@ export default function FacturationDetail() {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const includeHeader = options?.includeHeader ?? true;
     const includeFooter = options?.includeFooter ?? true;
+    const includeSignature = options?.includeSignature ?? true;
     const sourceClientName = options?.snapshot?.client_name ?? clientName;
     const sourceClientEmail = options?.snapshot?.client_email ?? clientEmail;
     const sourceClientPhone = options?.snapshot?.client_phone ?? clientPhone;
@@ -729,7 +736,7 @@ export default function FacturationDetail() {
     doc.setFont('helvetica', 'bold');
     doc.text(`TOTAL T.T.C: ${sourceTotals.total.toFixed(2)} MAD`, 123, finalY + 35);
 
-    if (includeFooter) {
+    if (includeSignature) {
       const signatureBoxY = Math.min(Math.max(finalY + 52, 210), 232);
       const signatureBoxX = 138;
       const signatureBoxW = 60;
@@ -752,7 +759,9 @@ export default function FacturationDetail() {
         doc.text('Zone signature', signatureBoxX + signatureBoxW / 2, signatureBoxY + signatureBoxH / 2 + 1, { align: 'center' });
         doc.setTextColor(71, 85, 105);
       }
+    }
 
+    if (includeFooter) {
       // Footer: legal/tax info always at bottom with clear separation
       doc.setFillColor(248, 250, 252);
       doc.rect(0, pageH - 28, pageW, 28, 'F');
@@ -776,9 +785,12 @@ export default function FacturationDetail() {
         footerY += 3.8;
       });
 
-      doc.setFontSize(7.6);
-      doc.text(`Document généré le ${new Date().toLocaleString('fr-FR')}`, 12, 291);
-      doc.text(companyName, 198, 291, { align: 'right' });
+      doc.setFontSize(7.2);
+      const generatedAt = new Date().toLocaleString('fr-FR');
+      doc.text(`Document généré parcgps.com`, 12, 286.5);
+      doc.text(`Logiciel 100% gratuit`, 12, 289.8);
+      doc.text(`Contact@parcgps.com`, 12, 293.1);
+      doc.text(`Date/Heure: ${generatedAt}`, 198, 291, { align: 'right' });
       doc.setTextColor(0, 0, 0);
     }
 
@@ -786,7 +798,11 @@ export default function FacturationDetail() {
   };
 
   const handlePreviewPdf = () => {
-    const pdf = buildInvoicePdf(pdfTemplate, { includeHeader: exportShowHeader, includeFooter: exportShowFooter });
+    const pdf = buildInvoicePdf(pdfTemplate, {
+      includeHeader: exportShowHeader,
+      includeFooter: exportShowFooter,
+      includeSignature: exportShowSignature,
+    });
     if (!pdf) return;
     const blob = pdf.output('blob');
     const url = URL.createObjectURL(blob);
@@ -915,6 +931,7 @@ export default function FacturationDetail() {
     const pdf = buildInvoicePdf(docTemplate, {
       includeHeader: Boolean(data.document.show_header),
       includeFooter: Boolean(data.document.show_footer),
+      includeSignature: exportShowSignature,
       snapshot: {
         client_name: data.document.client_name,
         client_email: data.document.client_email,
@@ -931,7 +948,7 @@ export default function FacturationDetail() {
     pdf.save(`${data.document.doc_number}.pdf`);
     setAutoDownloadDone(true);
     navigate(location.pathname, { replace: true });
-  }, [location.search, location.pathname, autoDownloadDone, data?.document, data?.items, companyLoading, company?.logo_url, logoDataUrl, signatureDataUrl, companySignatureUrl]);
+  }, [location.search, location.pathname, autoDownloadDone, data?.document, data?.items, companyLoading, company?.logo_url, logoDataUrl, signatureDataUrl, companySignatureUrl, exportShowSignature]);
 
   return (
     <DashboardLayout>
@@ -978,6 +995,10 @@ export default function FacturationDetail() {
                     <div className="flex items-center gap-1 border rounded px-2 py-1">
                       <Label className="text-xs">pied</Label>
                       <Switch checked={exportShowFooter} onCheckedChange={setExportShowFooter} />
+                    </div>
+                    <div className="flex items-center gap-1 border rounded px-2 py-1">
+                      <Label className="text-xs">cachet</Label>
+                      <Switch checked={exportShowSignature} onCheckedChange={setExportShowSignature} />
                     </div>
                   </div>
                 </div>
@@ -1031,7 +1052,7 @@ export default function FacturationDetail() {
                 </div>
                 <div className="rounded-md border px-3 py-2 flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-xs text-muted-foreground">
-                    Cachet & Signature (PDF): zone visible au-dessus du footer.
+                    Cachet & Signature (PDF): {exportShowSignature ? 'affiché' : 'masqué'}.
                   </div>
                   <div className="flex items-center gap-2">
                     {signatureDataUrl ? (

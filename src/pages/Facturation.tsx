@@ -119,6 +119,10 @@ const templateClassMap: Record<FactTemplateType, string> = {
   creative: 'bg-gradient-to-br from-violet-50 via-white to-pink-50 text-slate-900 border border-violet-200',
 };
 
+const SCHEDULED_INVOICE_MARKER = '[SCHEDULED_FACTURE]';
+const hasScheduledInvoiceMarker = (notes: string | null | undefined) =>
+  typeof notes === 'string' && notes.includes(SCHEDULED_INVOICE_MARKER);
+
 export default function Facturation() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -205,6 +209,11 @@ export default function Facturation() {
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [salesPage, setSalesPage] = useState(1);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleIssueDate, setScheduleIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [scheduleCopyLines, setScheduleCopyLines] = useState(true);
+  const [scheduleResult, setScheduleResult] = useState('');
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false);
   const [settlementAmount, setSettlementAmount] = useState('');
   const [homeMonthCursor, setHomeMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [newProductName, setNewProductName] = useState('');
@@ -593,8 +602,17 @@ export default function Facturation() {
   };
 
   const filteredDocs = useMemo(() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
     return docs.filter((doc) => {
       if (doc.doc_type !== currentStage) return false;
+      // Hide programmed invoices from listing until their programmed date arrives.
+      if (
+        currentStage === 'facture' &&
+        hasScheduledInvoiceMarker(doc.notes) &&
+        doc.issue_date > todayIso
+      ) {
+        return false;
+      }
       if (statusFilter !== 'all' && doc.status !== statusFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -1129,6 +1147,90 @@ export default function Facturation() {
     });
   };
 
+  const handleOpenScheduleDialog = () => {
+    setScheduleIssueDate(new Date().toISOString().slice(0, 10));
+    setScheduleCopyLines(true);
+    setScheduleResult('');
+    setScheduleDialogOpen(true);
+  };
+
+  const handleScheduleInvoices = async () => {
+    const selectedDocs = docs.filter((d) => selectedInvoiceIds.includes(d.id) && d.doc_type === 'facture');
+    if (selectedDocs.length === 0 || !scheduleIssueDate) return;
+    setScheduleSubmitting(true);
+    setScheduleResult('');
+
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const source of selectedDocs) {
+      const alreadyDraftSameDay = docs.some(
+        (d) =>
+          d.doc_type === 'facture' &&
+          d.issue_date === scheduleIssueDate &&
+          d.status === 'draft' &&
+          (d.client_name || '').trim().toLowerCase() === (source.client_name || '').trim().toLowerCase()
+      );
+      if (alreadyDraftSameDay) {
+        skipped += 1;
+        continue;
+      }
+
+      try {
+        const createdDoc = await createDoc.mutateAsync({
+          doc_type: 'facture',
+          client_name: source.client_name,
+          client_email: source.client_email || null,
+          client_phone: source.client_phone || null,
+          client_address: source.client_address || null,
+          issue_date: scheduleIssueDate,
+          due_date: source.due_date || null,
+          status: 'draft',
+          language: source.language,
+          direction: source.direction,
+          template_type: source.template_type,
+          show_header: source.show_header,
+          show_footer: source.show_footer,
+          notes: `${source.notes ? `${source.notes}\n` : ''}${SCHEDULED_INVOICE_MARKER}`,
+          tax_rate: Number(source.tax_rate || 20),
+          discount_amount: Number(source.discount_amount || 0),
+        });
+
+        if (scheduleCopyLines) {
+          const { data: sourceLines } = await supabase
+            .from('fact_document_items')
+            .select('*')
+            .eq('document_id', source.id)
+            .order('line_order', { ascending: true });
+          const lines = (sourceLines || []) as FactDocumentItem[];
+          if (lines.length > 0) {
+            await replaceItems.mutateAsync({
+              documentId: createdDoc.id,
+              items: lines.map((line) => ({
+                line_order: line.line_order,
+                description: line.description,
+                quantity: line.quantity,
+                unit: line.unit,
+                unit_price: line.unit_price,
+                discount_rate: line.discount_rate,
+                tax_rate: line.tax_rate,
+              })),
+            });
+          }
+        }
+        created += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ['fact-documents'] });
+    setSelectedInvoiceIds([]);
+    setScheduleSubmitting(false);
+    setScheduleResult(`Planification terminée: ${created} créée(s), ${skipped} ignorée(s), ${failed} en échec.`);
+  };
+
   const handleExportSelectedInvoicesPdf = async (forcedIds?: string[]) => {
     const ids = forcedIds || selectedInvoiceIds;
     const selectedDocs = docs.filter((d) => ids.includes(d.id) && d.doc_type === 'facture');
@@ -1446,6 +1548,51 @@ export default function Facturation() {
                 </DialogContent>
               </Dialog>
 
+              <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Planification des factures</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="text-sm text-muted-foreground">
+                      Factures sélectionnées: <span className="font-medium text-foreground">{selectedInvoiceIds.length}</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <Label>Date de planification</Label>
+                      <Input
+                        type="date"
+                        value={scheduleIssueDate}
+                        onChange={(e) => setScheduleIssueDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between border rounded-md p-3">
+                      <div>
+                        <div className="text-sm font-medium">Copier les lignes de facture</div>
+                        <div className="text-xs text-muted-foreground">Reprend les mêmes articles, quantités et prix.</div>
+                      </div>
+                      <Switch checked={scheduleCopyLines} onCheckedChange={setScheduleCopyLines} />
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Système intelligent: ignore automatiquement les doublons (même client + même date + état draft).
+                    </div>
+                    {scheduleResult ? (
+                      <div className="text-xs rounded-md border px-2 py-2 bg-muted/40">{scheduleResult}</div>
+                    ) : null}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <Button variant="outline" onClick={() => setScheduleDialogOpen(false)} disabled={scheduleSubmitting}>
+                        Fermer
+                      </Button>
+                      <Button
+                        onClick={handleScheduleInvoices}
+                        disabled={selectedInvoiceIds.length === 0 || !scheduleIssueDate || scheduleSubmitting}
+                      >
+                        {scheduleSubmitting ? 'Planification...' : 'Programmer'}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
               <div className="px-4 pb-4">
                 <div className="text-xs text-muted-foreground mb-2">
                   {salesPagedDocs.length} / {filteredDocs.length} (page {salesPageSafe}/{salesTotalPages})
@@ -1456,6 +1603,10 @@ export default function Facturation() {
                     <Button size="sm" variant="outline" onClick={handleExportSelectedInvoicesPdf} disabled={selectedInvoiceIds.length === 0}>
                       <FileDown className="w-4 h-4 mr-1" />
                       PDF sélection
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleOpenScheduleDialog} disabled={selectedInvoiceIds.length === 0}>
+                      <CalendarDays className="w-4 h-4 mr-1" />
+                      Programmer factures
                     </Button>
                     <Input
                       className="w-[160px] h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
