@@ -812,7 +812,7 @@ export default function FacturationDetail() {
 
       doc.setFontSize(7.2);
       const generatedAt = new Date().toLocaleString('fr-FR');
-      doc.text(`Document généré parcgps.com`, 12, 286.5);
+      doc.text(`Document généré par parcgps.com`, 12, 286.5);
       doc.text(`Logiciel 100% gratuit`, 12, 289.8);
       doc.text(`Contact@parcgps.com`, 12, 293.1);
       doc.text(`Date/Heure: ${generatedAt}`, 198, 291, { align: 'right' });
@@ -1177,6 +1177,12 @@ export default function FacturationDetail() {
                                 type="number"
                                 value={item.quantity === 0 ? '' : item.quantity}
                                 onChange={(e) => updateItem(idx, { quantity: Number(e.target.value || 0) })}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
                                 onFocus={(e) => e.currentTarget.select()}
                                 className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 placeholder="Qté"
@@ -1187,6 +1193,12 @@ export default function FacturationDetail() {
                                 type="number"
                                 value={item.unit_price === 0 ? '' : item.unit_price}
                                 onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value || 0) })}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
                                 onFocus={(e) => e.currentTarget.select()}
                                 className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 placeholder="PU"

@@ -1109,6 +1109,17 @@ export default function Facturation() {
     return sorted.filter((c) => (c.name || '').toLowerCase().includes(q));
   }, [contactsRows.clients, newDocClientSearch]);
 
+  useEffect(() => {
+    if (!newDocDialogOpen) return;
+    const q = newDocClientSearch.trim();
+    if (!q) return;
+    if (newDocClientsFiltered.length > 0) {
+      setNewDocClientId(newDocClientsFiltered[0].id);
+      return;
+    }
+    setNewDocClientId('');
+  }, [newDocDialogOpen, newDocClientSearch, newDocClientsFiltered]);
+
   const handleQuickCreateDocument = () => {
     const selectedClient = contactsRows.clients.find((c) => c.id === newDocClientId);
     if (!selectedClient) return;
