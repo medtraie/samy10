@@ -1112,6 +1112,7 @@ export default function Facturation() {
   const handleQuickCreateDocument = () => {
     const selectedClient = contactsRows.clients.find((c) => c.id === newDocClientId);
     if (!selectedClient) return;
+    const selectedClientIce = String((selectedClient as { ice?: string }).ice || '').trim();
     createDoc.mutate(
       {
         doc_type: currentStage,
@@ -1124,6 +1125,7 @@ export default function Facturation() {
         direction: 'ltr',
         show_header: true,
         show_footer: true,
+        notes: selectedClientIce ? `[ICE_CLIENT:${selectedClientIce}]` : undefined,
       },
       {
         onSuccess: (doc) => {

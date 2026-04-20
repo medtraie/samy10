@@ -168,6 +168,17 @@ export default function FacturationDetail() {
   const [exportShowFooter, setExportShowFooter] = useState(true);
   const [exportShowSignature, setExportShowSignature] = useState(true);
   const companySignatureUrl = (company as { signature_url?: string | null } | null)?.signature_url || null;
+  const inferredClientIce = useMemo(() => {
+    const client = (data?.document?.client_name || '').trim().toLowerCase();
+    if (!client) return '';
+    const match = docs.find(
+      (d) =>
+        d.id !== data?.document?.id &&
+        (d.client_name || '').trim().toLowerCase() === client &&
+        extractClientIceFromNotes(d.notes)
+    );
+    return match ? extractClientIceFromNotes(match.notes) : '';
+  }, [docs, data?.document?.id, data?.document?.client_name]);
 
   useEffect(() => {
     if (!data?.document) return;
@@ -175,7 +186,7 @@ export default function FacturationDetail() {
     setClientEmail(data.document.client_email || '');
     setClientPhone(data.document.client_phone || '');
     setClientAddress(data.document.client_address || '');
-    setClientIce(extractClientIceFromNotes(data.document.notes));
+    setClientIce(extractClientIceFromNotes(data.document.notes) || inferredClientIce);
     setNotes(stripIceMarker(data.document.notes || ''));
     setTaxRate(Number(data.document.tax_rate || 20));
     setDiscountAmount(Number(data.document.discount_amount || 0));
@@ -200,7 +211,7 @@ export default function FacturationDetail() {
           }))
         : [{ description: '', quantity: 1, unit: 'u', unit_price: 0, discount_rate: 0, tax_rate: 20 }]
     );
-  }, [data?.document, data?.items]);
+  }, [data?.document, data?.items, inferredClientIce]);
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((acc, item) => acc + Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 - Number(item.discount_rate || 0) / 100), 0);
@@ -539,6 +550,7 @@ export default function FacturationDetail() {
     const sourceClientPhone = options?.snapshot?.client_phone ?? clientPhone;
     const sourceClientAddress = options?.snapshot?.client_address ?? clientAddress;
     const sourceClientIce = extractClientIceFromNotes(options?.snapshot?.notes ?? composeNotesWithIce(notes, clientIce));
+    const sourcePlainNotes = stripIceMarker(options?.snapshot?.notes ?? notes);
     const sourceItems = options?.snapshot?.items ?? items;
     const sourceTaxRate = Number(options?.snapshot?.tax_rate ?? taxRate ?? 0);
     const sourceDiscountAmount = Number(options?.snapshot?.discount_amount ?? discountAmount ?? 0);
@@ -710,6 +722,19 @@ export default function FacturationDetail() {
     });
 
     let finalY = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || 120;
+    if (sourcePlainNotes.trim()) {
+      const notesY = finalY + 8;
+      const notesLines = doc.splitTextToSize(sourcePlainNotes.trim(), 180);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(51, 65, 85);
+      doc.text('Notes:', 12, notesY);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.8);
+      doc.text(notesLines, 12, notesY + 5);
+      finalY = notesY + 5 + notesLines.length * 4.2;
+      doc.setTextColor(0, 0, 0);
+    }
     const paymentStatus = paymentSummary.remaining <= 0.0001 ? 'PAYE' : paymentSummary.paid > 0 ? 'PARTIEL' : 'NON PAYE';
     if (finalY > 215) {
       doc.addPage();
@@ -1086,6 +1111,10 @@ export default function FacturationDetail() {
                     <Label>Téléphone</Label>
                     <Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
                   </div>
+                  <div className="space-y-1">
+                    <Label>ICE client</Label>
+                    <Input value={clientIce} onChange={(e) => setClientIce(e.target.value)} placeholder="ICE..." />
+                  </div>
                   <div className="space-y-1 md:col-span-2">
                     <Label>{isInvoice ? 'Workflow statut' : `Workflow ${currentDocLabel.toLowerCase()}`}</Label>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1105,10 +1134,6 @@ export default function FacturationDetail() {
                   <div className="space-y-1 md:col-span-2">
                     <Label>Adresse</Label>
                     <Textarea value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} rows={2} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>ICE client</Label>
-                    <Input value={clientIce} onChange={(e) => setClientIce(e.target.value)} placeholder="ICE..." />
                   </div>
                   {isInvoice ? (
                     <div className="space-y-1">
