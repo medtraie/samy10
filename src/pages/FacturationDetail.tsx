@@ -161,6 +161,7 @@ export default function FacturationDetail() {
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [signatureUploading, setSignatureUploading] = useState(false);
   const signatureInputRef = useRef<HTMLInputElement | null>(null);
+  const hydratedDocumentIdRef = useRef<string | null>(null);
   const [pdfTemplate, setPdfTemplate] = useState<PdfTemplate>('modern');
   const [partialAmount, setPartialAmount] = useState('');
   const [autoDownloadDone, setAutoDownloadDone] = useState(false);
@@ -181,7 +182,13 @@ export default function FacturationDetail() {
   }, [docs, data?.document?.id, data?.document?.client_name]);
 
   useEffect(() => {
+    hydratedDocumentIdRef.current = null;
+  }, [documentId]);
+
+  useEffect(() => {
     if (!data?.document) return;
+    if (hydratedDocumentIdRef.current === data.document.id) return;
+    hydratedDocumentIdRef.current = data.document.id;
     setClientName(data.document.client_name || '');
     setClientEmail(data.document.client_email || '');
     setClientPhone(data.document.client_phone || '');
@@ -211,7 +218,7 @@ export default function FacturationDetail() {
           }))
         : [{ description: '', quantity: 1, unit: 'u', unit_price: 0, discount_rate: 0, tax_rate: 20 }]
     );
-  }, [data?.document, data?.items, inferredClientIce]);
+  }, [data?.document, data?.items, inferredClientIce, documentId]);
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((acc, item) => acc + Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 - Number(item.discount_rate || 0) / 100), 0);
@@ -1158,10 +1165,10 @@ export default function FacturationDetail() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Qté</TableHead>
-                        <TableHead className="text-right">PU</TableHead>
-                        <TableHead className="text-right">TVA</TableHead>
+                        <TableHead className="w-[52%] min-w-[260px]">Description</TableHead>
+                        <TableHead className="w-[90px] text-right">Qté</TableHead>
+                        <TableHead className="w-[110px] text-right">PU</TableHead>
+                        <TableHead className="w-[90px] text-right">TVA</TableHead>
                         <TableHead className="text-right">Total</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1171,8 +1178,10 @@ export default function FacturationDetail() {
                       ) : (
                         items.map((item, idx) => (
                           <TableRow key={item.id}>
-                            <TableCell><Input value={item.description} onChange={(e) => updateItem(idx, { description: e.target.value })} /></TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="w-[52%] min-w-[260px]">
+                              <Input value={item.description} onChange={(e) => updateItem(idx, { description: e.target.value })} />
+                            </TableCell>
+                            <TableCell className="w-[90px] text-right">
                               <Input
                                 type="number"
                                 value={item.quantity === 0 ? '' : item.quantity}
@@ -1188,7 +1197,7 @@ export default function FacturationDetail() {
                                 placeholder="Qté"
                               />
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="w-[110px] text-right">
                               <Input
                                 type="number"
                                 value={item.unit_price === 0 ? '' : item.unit_price}
@@ -1204,7 +1213,7 @@ export default function FacturationDetail() {
                                 placeholder="PU"
                               />
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="w-[90px] text-right">
                               <Input
                                 type="number"
                                 value={item.tax_rate === 0 ? '' : item.tax_rate}

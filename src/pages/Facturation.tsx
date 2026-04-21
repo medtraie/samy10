@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useNavigate } from 'react-router-dom';
 import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
+import { useToast } from '@/hooks/use-toast';
 import {
   useAchatsSuppliers,
   useBulkUpdatePurchaseOrdersStatus,
@@ -122,9 +123,13 @@ const templateClassMap: Record<FactTemplateType, string> = {
 const SCHEDULED_INVOICE_MARKER = '[SCHEDULED_FACTURE]';
 const hasScheduledInvoiceMarker = (notes: string | null | undefined) =>
   typeof notes === 'string' && notes.includes(SCHEDULED_INVOICE_MARKER);
+const CREDIT_NOTE_MARKER = '[AVOIR_FACTURE]';
+const hasCreditNoteMarker = (notes: string | null | undefined) =>
+  typeof notes === 'string' && notes.includes(CREDIT_NOTE_MARKER);
 
 export default function Facturation() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [mainModule, setMainModule] = useState<'home' | 'contacts' | 'sales' | 'purchases' | 'catalog' | 'analytics'>('sales');
   const [contactsTab, setContactsTab] = useState<'clients' | 'suppliers'>('clients');
@@ -613,6 +618,9 @@ export default function Facturation() {
       ) {
         return false;
       }
+      if (statusFilter === 'avoir') {
+        return currentStage === 'facture' && hasCreditNoteMarker(doc.notes);
+      }
       if (statusFilter !== 'all' && doc.status !== statusFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -782,6 +790,13 @@ export default function Facturation() {
   }, [homeMonthCursor, docs]);
 
   const getStatusBadge = (doc: FactDocument) => {
+    if (hasCreditNoteMarker(doc.notes)) {
+      return (
+        <Badge className="bg-violet-500/15 text-violet-600 border-violet-500/30">
+          Avoir
+        </Badge>
+      );
+    }
     if (doc.status === 'paid') {
       return (
         <Badge className="bg-green-500/15 text-green-600 border-green-500/30 gap-1">
@@ -1245,115 +1260,126 @@ export default function Facturation() {
   };
 
   const handleExportSelectedInvoicesPdf = async (forcedIds?: string[]) => {
-    const ids = forcedIds || selectedInvoiceIds;
-    const selectedDocs = docs.filter((d) => ids.includes(d.id) && d.doc_type === 'facture');
-    if (selectedDocs.length === 0) return;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const ids = Array.isArray(forcedIds) ? forcedIds : selectedInvoiceIds;
+    const selectedDocs = docs
+      .filter((d) => ids.includes(d.id) && d.doc_type === 'facture')
+      .sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    if (selectedDocs.length === 0) {
+      toast({
+        title: 'Aucune sélection',
+        description: 'Sélectionnez au moins une facture avant de télécharger le PDF.',
+      });
+      return;
+    }
+
+    // Use the same download pipeline as row action, but sequentially to avoid browser dropping downloads.
     for (let index = 0; index < selectedDocs.length; index += 1) {
       const d = selectedDocs[index];
-      if (index > 0) pdf.addPage();
-      const { data: lines } = await supabase
+      await handleDownloadInvoicePdf(d.id);
+    }
+
+    toast({
+      title: 'Téléchargement lancé',
+      description:
+        selectedDocs.length === 1
+          ? 'Le PDF sélectionné est en cours de téléchargement.'
+          : `${selectedDocs.length} PDFs sélectionnés sont en cours de téléchargement.`,
+    });
+  };
+
+  const handleCreateCreditNote = async () => {
+    if (selectedInvoiceIds.length !== 1) {
+      toast({
+        title: 'Sélection invalide',
+        description: "Sélectionnez une seule facture pour créer un avoir.",
+      });
+      return;
+    }
+
+    const source = docs.find((d) => d.id === selectedInvoiceIds[0] && d.doc_type === 'facture');
+    if (!source) {
+      toast({
+        title: 'Facture introuvable',
+        description: "Impossible de créer l'avoir: facture source introuvable.",
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (hasCreditNoteMarker(source.notes)) {
+      toast({
+        title: 'Action non autorisée',
+        description: "Impossible de créer un avoir depuis une facture d'avoir.",
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const { data: sourceLines, error: sourceLinesError } = await supabase
         .from('fact_document_items')
         .select('*')
-        .eq('document_id', d.id)
+        .eq('document_id', source.id)
         .order('line_order', { ascending: true });
-      const items = (lines || []) as FactDocumentItem[];
-      const paid = invoicePaidById.get(d.id) || 0;
-      const remain = Math.max(0, Number(d.total_amount || 0) - paid);
-      const companyName = company?.company_name || 'Société';
-      const companyAddress = company?.address || '-';
-      const companyEmail = company?.contact_email || '-';
-      const companyPhone = company?.contact_phone || '-';
-      const companyTax = company?.tax_info || '-';
+      if (sourceLinesError) throw sourceLinesError;
 
-      pdf.setFillColor(15, 23, 42);
-      pdf.rect(0, 0, 210, 40, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(16);
-      pdf.text(companyName, 12, 14);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.text(`Email: ${companyEmail}`, 12, 20);
-      pdf.text(`Tél: ${companyPhone}`, 12, 25);
-      pdf.text(`Adresse: ${companyAddress}`, 12, 30);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(15);
-      pdf.text('FACTURE', 140, 14);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.text(`N°: ${d.doc_number}`, 140, 21);
-      pdf.text(`Date: ${new Date(d.issue_date).toLocaleDateString('fr-FR')}`, 140, 26);
-      pdf.text(`Statut: ${d.status}`, 140, 31);
-      pdf.setTextColor(0, 0, 0);
-
-      pdf.setFillColor(241, 245, 249);
-      pdf.rect(12, 46, 186, 30, 'F');
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      pdf.text('Informations client', 14, 53);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.text(`Nom: ${d.client_name || '-'}`, 14, 59);
-      pdf.text(`Email: ${d.client_email || '-'}`, 14, 64);
-      pdf.text(`Téléphone: ${d.client_phone || '-'}`, 14, 69);
-      const clientAddressLines = pdf.splitTextToSize(`Adresse: ${d.client_address || '-'}`, 176);
-      pdf.text(clientAddressLines, 14, 74);
-
-      autoTable(pdf, {
-        startY: 83,
-        head: [['Description', 'Qté', 'Prix H.T', 'Remise %', 'TVA', 'Total H.T']],
-        body: items.map((it) => [
-          it.description || '-',
-          Number(it.quantity || 0).toFixed(2),
-          Number(it.unit_price || 0).toFixed(2),
-          Number(it.discount_rate || 0).toFixed(2),
-          Number(it.tax_rate || 0).toFixed(2),
-          Number(it.line_total || 0).toFixed(2),
-        ]),
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [30, 41, 59] },
+      const creditDoc = await createDoc.mutateAsync({
+        doc_type: 'facture',
+        client_name: source.client_name,
+        client_email: source.client_email || undefined,
+        client_phone: source.client_phone || undefined,
+        client_address: source.client_address || undefined,
+        issue_date: new Date().toISOString().slice(0, 10),
+        due_date: source.due_date || undefined,
+        template_type: source.template_type,
+        language: source.language,
+        direction: source.direction,
+        show_header: source.show_header,
+        show_footer: source.show_footer,
+        notes: `${source.notes ? `${source.notes}\n` : ''}${CREDIT_NOTE_MARKER}\n[AVOIR_SOURCE:${source.doc_number}]`,
+        source_document_id: source.id,
       });
 
-      let finalY = (pdf as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || 120;
-      if (finalY > 230) {
-        pdf.addPage();
-        finalY = 24;
+      const lines = (sourceLines || []) as FactDocumentItem[];
+      if (lines.length > 0) {
+        await replaceItems.mutateAsync({
+          documentId: creditDoc.id,
+          items: lines.map((line) => ({
+            line_order: line.line_order,
+            description: line.description,
+            quantity: -Math.abs(Number(line.quantity || 0)),
+            unit: line.unit,
+            unit_price: Number(line.unit_price || 0),
+            discount_rate: Number(line.discount_rate || 0),
+            tax_rate: Number(line.tax_rate || 0),
+          })),
+        });
       }
-      const subtotal = Number(d.subtotal || 0);
-      const tax = Number(d.tax_amount || 0);
-      const paymentStatus = remain <= 0.0001 ? 'PAYE' : paid > 0 ? 'PARTIEL' : 'NON PAYE';
 
-      pdf.setDrawColor(203, 213, 225);
-      pdf.rect(120, finalY + 6, 78, 36);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.text(`Total H.T: ${subtotal.toFixed(2)} MAD`, 123, finalY + 13);
-      pdf.text(`TVA 20%: ${tax.toFixed(2)} MAD`, 123, finalY + 18);
-      pdf.text(`Remise: ${Number(d.discount_amount || 0).toFixed(2)} MAD`, 123, finalY + 23);
-      pdf.text(`Payé: ${paid.toFixed(2)} MAD`, 123, finalY + 28);
-      pdf.text(`Reste: ${remain.toFixed(2)} MAD`, 123, finalY + 33);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`TOTAL T.T.C: ${Number(d.total_amount || 0).toFixed(2)} MAD`, 123, finalY + 40);
+      createEvent.mutate({
+        document_id: source.id,
+        event_type: 'credit_note_created',
+        event_label: 'Avoir créé',
+        event_payload: {
+          credit_note_id: creditDoc.id,
+          credit_note_number: creditDoc.doc_number,
+        },
+      });
 
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'normal');
-      const taxLines = pdf.splitTextToSize(`Infos fiscales: ${companyTax}`, 100);
-      pdf.text(taxLines, 12, finalY + 14);
-      pdf.text(`Mode de règlement: ${paymentStatus}`, 12, finalY + 26);
-      pdf.setDrawColor(226, 232, 240);
-      pdf.line(12, 280, 198, 280);
-      pdf.setFontSize(8);
-      pdf.setTextColor(100, 116, 139);
-      pdf.text(`Document généré le ${new Date().toLocaleString('fr-FR')}`, 12, 286);
-      pdf.text(companyName, 198, 286, { align: 'right' });
-      pdf.setTextColor(0, 0, 0);
+      toast({
+        title: 'Avoir créé',
+        description: `Facture d'avoir ${creditDoc.doc_number} créée avec succès.`,
+      });
+      setSelectedInvoiceIds([]);
+      navigate(`/facturation/${creditDoc.id}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erreur lors de la création de l'avoir.";
+      toast({
+        title: 'Échec création avoir',
+        description: message,
+        variant: 'destructive',
+      });
     }
-    pdf.save(
-      selectedDocs.length === 1
-        ? `${selectedDocs[0].doc_number}.pdf`
-        : `factures-selection-${new Date().toISOString().slice(0, 10)}.pdf`
-    );
   };
 
   const handleSettleDebt = () => {
@@ -1400,20 +1426,41 @@ export default function Facturation() {
     );
   };
 
-  const handleDownloadInvoicePdf = async (id: string) => {
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    const cleanup = () => {
-      if (iframe.parentNode) iframe.remove();
-    };
-    iframe.addEventListener('load', () => {
-      window.setTimeout(cleanup, 3000);
+  const handleDownloadInvoicePdf = (id: string): Promise<void> =>
+    new Promise((resolve) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      let completed = false;
+      const finish = () => {
+        if (completed) return;
+        completed = true;
+        resolve();
+      };
+      const cleanup = () => {
+        if (iframe.parentNode) iframe.remove();
+      };
+
+      iframe.addEventListener(
+        'load',
+        () => {
+          // Give the detail page enough time to generate and trigger file save before moving next.
+          window.setTimeout(() => {
+            cleanup();
+            finish();
+          }, 3800);
+        },
+        { once: true }
+      );
+
+      iframe.src = `/facturation/${id}?download=1`;
+      document.body.appendChild(iframe);
+
+      // Fallback in case load/download is delayed.
+      window.setTimeout(() => {
+        cleanup();
+        finish();
+      }, 45000);
     });
-    iframe.src = `/facturation/${id}?download=1`;
-    document.body.appendChild(iframe);
-    // Fallback cleanup in case load event is delayed.
-    window.setTimeout(cleanup, 30000);
-  };
 
   return (
     <DashboardLayout>
@@ -1484,6 +1531,7 @@ export default function Facturation() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Tous les états</SelectItem>
+                      {currentStage === 'facture' ? <SelectItem value="avoir">Avoir uniquement</SelectItem> : null}
                       <SelectItem value="draft">draft</SelectItem>
                       <SelectItem value="sent">sent</SelectItem>
                       <SelectItem value="paid">paid</SelectItem>
@@ -1613,13 +1661,16 @@ export default function Facturation() {
                 {currentStage === 'facture' && (
                   <div className="mb-2 p-2 rounded border border-slate-700 bg-slate-900/40 flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-slate-200">Sélection: {selectedInvoiceIds.length}</span>
-                    <Button size="sm" variant="outline" onClick={handleExportSelectedInvoicesPdf} disabled={selectedInvoiceIds.length === 0}>
+                    <Button size="sm" variant="outline" onClick={() => { void handleExportSelectedInvoicesPdf(); }} disabled={selectedInvoiceIds.length === 0}>
                       <FileDown className="w-4 h-4 mr-1" />
                       PDF sélection
                     </Button>
                     <Button size="sm" variant="outline" onClick={handleOpenScheduleDialog} disabled={selectedInvoiceIds.length === 0}>
                       <CalendarDays className="w-4 h-4 mr-1" />
                       Programmer factures
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { void handleCreateCreditNote(); }} disabled={selectedInvoiceIds.length !== 1}>
+                      Créer avoir
                     </Button>
                     <Input
                       className="w-[160px] h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"

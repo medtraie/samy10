@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAppSettings } from '@/hooks/useAppSettings';
 import { useRevisionAlerts } from '@/hooks/useRevisions';
+import { useEffect, useRef } from 'react';
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -79,6 +80,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const { toast } = useToast();
   const { moduleSettings } = useAppSettings();
   const { data: revAlerts = [] } = useRevisionAlerts();
+  const navScrollRef = useRef<HTMLElement | null>(null);
   const dueOverdueCount = (revAlerts as any[]).filter((a) => !a.ack && (a.status === 'due' || a.status === 'overdue')).length;
 
   const handleSignOut = async () => {
@@ -101,6 +103,40 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const computedNavItems = filteredNavItems.map((item) =>
     item.key === 'alerts' ? { ...item, badge: dueOverdueCount } : item
   );
+
+  useEffect(() => {
+    const navEl = navScrollRef.current;
+    if (!navEl) return;
+
+    try {
+      const saved = sessionStorage.getItem('sidebar-scroll-top');
+      if (saved) navEl.scrollTop = Number(saved) || 0;
+    } catch {
+      // ignore storage failures
+    }
+
+    const onScroll = () => {
+      try {
+        sessionStorage.setItem('sidebar-scroll-top', String(navEl.scrollTop));
+      } catch {
+        // ignore storage failures
+      }
+    };
+
+    navEl.addEventListener('scroll', onScroll);
+    return () => {
+      onScroll();
+      navEl.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    const navEl = navScrollRef.current;
+    if (!navEl) return;
+    const activeEl = navEl.querySelector('.nav-item-active') as HTMLElement | null;
+    if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+  }, [location.pathname, collapsed]);
+
   return (
     <aside
       className={cn(
@@ -157,10 +193,13 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-2 scrollbar-thin">
+      <nav ref={navScrollRef} className="flex-1 overflow-y-auto py-4 px-2 scrollbar-thin">
         <ul className="space-y-1">
           {computedNavItems.map((item) => {
-            const isActive = location.pathname === item.path;
+            const isActive =
+              item.path === '/'
+                ? location.pathname === '/'
+                : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
             const Icon = item.icon;
 
             return (

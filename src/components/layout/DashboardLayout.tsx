@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -10,7 +10,21 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'ar';
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar-collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebar-collapsed', isSidebarCollapsed ? '1' : '0');
+    } catch {
+      // ignore storage failures
+    }
+  }, [isSidebarCollapsed]);
 
   const sidebarMarginClass = isRTL
     ? isSidebarCollapsed
