@@ -160,8 +160,58 @@ async function convertFactDocument(payload: { source_document_id: string; target
     p_source_document_id: payload.source_document_id,
     p_target_doc_type: payload.target_doc_type,
   });
-  if (error) throw error;
-  return data as FactDocument;
+  if (!error) return data as FactDocument;
+
+  // Fallback path: if DB convert RPC is out-of-sync, convert client-side
+  // while preserving application behavior (same target type + copied lines).
+  const { data: sourceDoc, error: sourceDocError } = await supabase
+    .from('fact_documents')
+    .select('*')
+    .eq('id', payload.source_document_id)
+    .maybeSingle();
+  if (sourceDocError) throw sourceDocError;
+  if (!sourceDoc) throw error;
+
+  const created = await createFactDocument({
+    doc_type: payload.target_doc_type,
+    client_name: sourceDoc.client_name,
+    client_email: sourceDoc.client_email ?? undefined,
+    client_phone: sourceDoc.client_phone ?? undefined,
+    client_address: sourceDoc.client_address ?? undefined,
+    issue_date: new Date().toISOString().slice(0, 10),
+    due_date: sourceDoc.due_date ?? undefined,
+    template_type: sourceDoc.template_type,
+    language: sourceDoc.language,
+    direction: sourceDoc.direction,
+    show_header: sourceDoc.show_header,
+    show_footer: sourceDoc.show_footer,
+    notes: sourceDoc.notes ?? undefined,
+    custom_columns: sourceDoc.custom_columns ?? [],
+    source_document_id: sourceDoc.id,
+  });
+
+  const { data: sourceItems, error: sourceItemsError } = await supabase
+    .from('fact_document_items')
+    .select('*')
+    .eq('document_id', sourceDoc.id)
+    .order('line_order', { ascending: true });
+  if (sourceItemsError) throw sourceItemsError;
+
+  await replaceFactDocumentItems({
+    documentId: created.id,
+    items: ((sourceItems || []) as FactDocumentItem[]).map((item) => ({
+      line_order: item.line_order,
+      description: item.description,
+      quantity: item.quantity,
+      unit: item.unit,
+      unit_price: item.unit_price,
+      discount_rate: item.discount_rate,
+      tax_rate: item.tax_rate,
+      extra_fields: item.extra_fields,
+    })),
+  });
+
+  return created as FactDocument;
 }
 
 async function upsertFactDocument(payload: Partial<FactDocument> & { id: string }) {

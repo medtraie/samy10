@@ -1504,6 +1504,15 @@ export default function Facturation() {
                     <Plus className="w-4 h-4 mr-1" />
                     Nouveau
                   </Button>
+                  {currentStage === 'facture' ? (
+                    <Button
+                      size="sm"
+                      variant={statusFilter === 'avoir' ? 'default' : 'outline'}
+                      onClick={() => setStatusFilter('avoir')}
+                    >
+                      Avoirs
+                    </Button>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="relative">

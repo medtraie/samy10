@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useConvertFactDocument, useCreateFactDocument, useCreateFactDocumentEvent, useFactDocumentDetails, useFactDocuments, useReplaceFactDocumentItems, useUpdateFactDocument, type FactDocumentType } from '@/hooks/useFacturation';
+import { useConvertFactDocument, useCreateFactDocument, useCreateFactDocumentEvent, useFactDocumentDetails, useFactDocuments, useReplaceFactDocumentItems, useUpdateFactDocument, type FactDocument, type FactDocumentType } from '@/hooks/useFacturation';
 import { ArrowLeft, ArrowRightLeft, Copy, Eye, FileDown, History, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -84,6 +84,24 @@ const composeNotesWithIce = (plainNotes: string, clientIce: string) => {
   const ice = clientIce.trim();
   if (!ice) return cleanedNotes;
   return `${cleanedNotes}${cleanedNotes ? '\n' : ''}[ICE_CLIENT:${ice}]`;
+};
+
+const CREDIT_NOTE_MARKER = '[AVOIR_FACTURE]';
+const hasCreditNoteMarker = (notesValue: string | null | undefined) =>
+  typeof notesValue === 'string' && notesValue.includes(CREDIT_NOTE_MARKER);
+
+const buildAvoirDisplayNumber = (documentId: string, issueDate: string, documents: FactDocument[]) => {
+  const targetYear = String(new Date(issueDate).getFullYear());
+  const avoirDocs = documents
+    .filter((d) => d.doc_type === 'facture' && hasCreditNoteMarker(d.notes))
+    .sort((a, b) => {
+      const dateDelta = new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime();
+      if (dateDelta !== 0) return dateDelta;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+  const index = avoirDocs.findIndex((d) => d.id === documentId);
+  const sequence = String(index >= 0 ? index + 1 : avoirDocs.length + 1).padStart(5, '0');
+  return `AV-${targetYear}-${sequence}`;
 };
 
 const UNITS_FR = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf'];
@@ -229,7 +247,9 @@ export default function FacturationDetail() {
 
   const currentDocType = data?.document?.doc_type ?? 'facture';
   const isInvoice = currentDocType === 'facture';
-  const currentDocLabel = docTypeLabels[currentDocType];
+  const isCurrentCreditNote =
+    currentDocType === 'facture' && hasCreditNoteMarker(data?.document?.notes);
+  const currentDocLabel = isCurrentCreditNote ? 'Avoir' : docTypeLabels[currentDocType];
   const workflowSteps = isInvoice ? paymentWorkflow : nonInvoiceWorkflow[currentDocType as Exclude<FactDocumentType, 'facture'>];
 
   const clientInvoices = useMemo(() => {
@@ -576,7 +596,12 @@ export default function FacturationDetail() {
       return { subtotal, tax, total };
     })();
     const sourceDocType = data.document.doc_type;
-    const sourceDocLabel = docTypeLabels[sourceDocType] || 'Facture';
+    const sourceIsCreditNote =
+      sourceDocType === 'facture' && hasCreditNoteMarker(options?.snapshot?.notes ?? data.document.notes);
+    const sourceDocLabel = sourceIsCreditNote ? 'Avoir' : (docTypeLabels[sourceDocType] || 'Facture');
+    const sourceDocNumber = sourceIsCreditNote
+      ? buildAvoirDisplayNumber(data.document.id, data.document.issue_date, docs)
+      : data.document.doc_number;
 
     const companyName = company?.company_name || 'Société';
     const companyAddress = company?.address || '-';
@@ -668,7 +693,7 @@ export default function FacturationDetail() {
     doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isModern ? 9.3 : 10);
-    doc.text(`N°: ${data.document.doc_number}`, 127, isModern ? 25.5 : 27);
+    doc.text(`N°: ${sourceDocNumber}`, 127, isModern ? 25.5 : 27);
     doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 32 : 34);
     doc.text(`Statut: ${sourceStatus || data.document.status || '-'}`, 127, isModern ? 38.5 : 41);
     if (data.document.due_date) {
