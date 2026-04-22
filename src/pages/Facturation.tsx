@@ -51,6 +51,8 @@ import { Activity, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, Chevro
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { UnifiedClientForm, type UnifiedClientFormValues } from '@/components/clients/UnifiedClientForm';
+import { upsertUnifiedClientRecord } from '@/lib/unifiedClients';
 
 type EditorState = {
   id?: string;
@@ -151,6 +153,7 @@ export default function Facturation() {
   const [newClientIf, setNewClientIf] = useState('');
   const [newClientRc, setNewClientRc] = useState('');
   const [newClientCreatedDate, setNewClientCreatedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newClientNotes, setNewClientNotes] = useState('');
   const [supplierFormOpen, setSupplierFormOpen] = useState(false);
   const [newSupplierType, setNewSupplierType] = useState<'societe' | 'particulier'>('societe');
   const [newSupplierName, setNewSupplierName] = useState('');
@@ -185,6 +188,7 @@ export default function Facturation() {
     ifCode: string;
     rcCode: string;
     createdDate: string;
+    notes: string;
   }>>([]);
   const [manualSuppliers, setManualSuppliers] = useState<Array<{
     id: string;
@@ -789,6 +793,32 @@ export default function Facturation() {
     return { cells, monthLabel: homeMonthCursor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) };
   }, [homeMonthCursor, docs]);
 
+  const avoirDisplayNumberById = useMemo(() => {
+    const map = new Map<string, string>();
+    const avoirDocs = docs
+      .filter((d) => d.doc_type === 'facture' && hasCreditNoteMarker(d.notes))
+      .sort((a, b) => {
+        const dateDelta = new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime();
+        if (dateDelta !== 0) return dateDelta;
+        const createdDelta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        if (createdDelta !== 0) return createdDelta;
+        return a.id.localeCompare(b.id);
+      });
+    avoirDocs.forEach((doc, index) => {
+      const year = String(new Date(doc.issue_date).getFullYear());
+      const seq = String(index + 1).padStart(5, '0');
+      map.set(doc.id, `AV-${year}-${seq}`);
+    });
+    return map;
+  }, [docs]);
+
+  const getDisplayDocNumber = (doc: FactDocument) => {
+    if (doc.doc_type === 'facture' && hasCreditNoteMarker(doc.notes)) {
+      return avoirDisplayNumberById.get(doc.id) || doc.doc_number;
+    }
+    return doc.doc_number;
+  };
+
   const getStatusBadge = (doc: FactDocument) => {
     if (hasCreditNoteMarker(doc.notes)) {
       return (
@@ -840,6 +870,7 @@ export default function Facturation() {
         email: `${row.client.replace(/\s+/g, '.').toLowerCase()}@client.com`,
         phone: `+212 6${(20000000 + idx * 1777).toString().slice(0, 8)}`,
         total: row.total,
+        notes: '',
       }));
     const clients = [...manualClients, ...inferredClients];
     return { suppliers, clients };
@@ -988,6 +1019,7 @@ export default function Facturation() {
     setNewClientIf('');
     setNewClientRc('');
     setNewClientCreatedDate(new Date().toISOString().slice(0, 10));
+    setNewClientNotes('');
     setClientFormOpen(true);
     setSupplierFormOpen(false);
   };
@@ -1017,9 +1049,10 @@ export default function Facturation() {
   const handleCreateClient = () => {
     const name = newClientName.trim();
     if (!name) return;
+    const sourceId = `manual-${Date.now()}`;
     setManualClients((prev) => [
       {
-        id: `manual-${Date.now()}`,
+        id: sourceId,
         name,
         city: newClientCity.trim() || 'Casablanca',
         email: newClientEmail.trim() || `${name.replace(/\s+/g, '.').toLowerCase()}@client.com`,
@@ -1036,9 +1069,22 @@ export default function Facturation() {
         ifCode: newClientIf.trim(),
         rcCode: newClientRc.trim(),
         createdDate: newClientCreatedDate,
+        notes: newClientNotes.trim(),
       },
       ...prev,
     ]);
+    upsertUnifiedClientRecord({
+      source_module: 'facturation',
+      source_id: sourceId,
+      name,
+      company: null,
+      phone: newClientPhone.trim() || null,
+      email: newClientEmail.trim() || null,
+      address: newClientAddress.trim() || null,
+      city: newClientCity.trim() || null,
+      ice: newClientIce.trim() || null,
+      notes: newClientNotes.trim() || null,
+    });
     setContactsSearch(name);
     setClientFormOpen(false);
     setNewClientType('societe');
@@ -1056,6 +1102,70 @@ export default function Facturation() {
     setNewClientIf('');
     setNewClientRc('');
     setNewClientCreatedDate(new Date().toISOString().slice(0, 10));
+    setNewClientNotes('');
+  };
+
+  const setUnifiedFacturationClientField = <K extends keyof UnifiedClientFormValues>(
+    field: K,
+    value: UnifiedClientFormValues[K]
+  ) => {
+    switch (field) {
+      case 'type':
+        setNewClientType(value as 'societe' | 'particulier');
+        return;
+      case 'sourceModule':
+        return;
+      case 'name':
+        setNewClientName(String(value));
+        return;
+      case 'company':
+        // Facturation local clients don't persist a dedicated company field yet.
+        return;
+      case 'email':
+        setNewClientEmail(String(value));
+        return;
+      case 'phone':
+        setNewClientPhone(String(value));
+        return;
+      case 'gsm':
+        setNewClientGsm(String(value));
+        return;
+      case 'fax':
+        setNewClientFax(String(value));
+        return;
+      case 'website':
+        setNewClientWebsite(String(value));
+        return;
+      case 'address':
+        setNewClientAddress(String(value));
+        return;
+      case 'postalCode':
+        setNewClientPostalCode(String(value));
+        return;
+      case 'city':
+        setNewClientCity(String(value));
+        return;
+      case 'country':
+        setNewClientCountry(String(value));
+        return;
+      case 'ice':
+        setNewClientIce(String(value));
+        return;
+      case 'ifCode':
+        setNewClientIf(String(value));
+        return;
+      case 'rcCode':
+        setNewClientRc(String(value));
+        return;
+      case 'createdDate':
+        setNewClientCreatedDate(String(value));
+        return;
+      case 'notes':
+        setNewClientNotes(String(value));
+        return;
+      default:
+        return;
+    }
   };
 
   const handleCreateSupplier = () => {
@@ -1750,7 +1860,7 @@ export default function Facturation() {
                                 </TableCell>
                               )}
                               <TableCell>{getStatusBadge(doc)}</TableCell>
-                              <TableCell className="font-semibold text-sky-600">{doc.doc_number}</TableCell>
+                              <TableCell className="font-semibold text-sky-600">{getDisplayDocNumber(doc)}</TableCell>
                               <TableCell>{new Date(doc.issue_date).toLocaleDateString('fr-FR')}</TableCell>
                               <TableCell>{doc.client_name}</TableCell>
                               <TableCell className="text-right">{Number(doc.subtotal || 0).toFixed(2)}</TableCell>
@@ -1787,7 +1897,7 @@ export default function Facturation() {
                       >
                         <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
-                            <CardTitle className="text-sm">{doc.doc_number}</CardTitle>
+                            <CardTitle className="text-sm">{getDisplayDocNumber(doc)}</CardTitle>
                             {getStatusBadge(doc)}
                           </div>
                           <CardDescription>{new Date(doc.issue_date).toLocaleDateString('fr-FR')}</CardDescription>
@@ -1879,94 +1989,32 @@ export default function Facturation() {
                     <CardTitle className="text-base">Nouveau Client</CardTitle>
                     <CardDescription>Ajout rapide depuis Facturation</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-6">
-                      <Label className="font-medium">Type</Label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="radio" checked={newClientType === 'societe'} onChange={() => setNewClientType('societe')} />
-                        Société
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="radio" checked={newClientType === 'particulier'} onChange={() => setNewClientType('particulier')} />
-                        Particulier
-                      </label>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label>Nom</Label>
-                      <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} placeholder="Nom" />
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <Label className="font-semibold">Adresse de facturation</Label>
-                        <div className="space-y-1">
-                          <Label>Adresse</Label>
-                          <Input value={newClientAddress} onChange={(e) => setNewClientAddress(e.target.value)} placeholder="Adresse" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label>CP</Label>
-                            <Input value={newClientPostalCode} onChange={(e) => setNewClientPostalCode(e.target.value)} placeholder="CP" />
-                          </div>
-                          <div className="space-y-1">
-                            <Label>Ville</Label>
-                            <Input value={newClientCity} onChange={(e) => setNewClientCity(e.target.value)} placeholder="Ville" />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Pays</Label>
-                          <Input value={newClientCountry} onChange={(e) => setNewClientCountry(e.target.value)} placeholder="Pays" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Code ICE</Label>
-                          <Input value={newClientIce} onChange={(e) => setNewClientIce(e.target.value)} placeholder="Code ICE" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label>Code IF</Label>
-                            <Input value={newClientIf} onChange={(e) => setNewClientIf(e.target.value)} placeholder="Code IF" />
-                          </div>
-                          <div className="space-y-1">
-                            <Label>RC</Label>
-                            <Input value={newClientRc} onChange={(e) => setNewClientRc(e.target.value)} placeholder="RC" />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label className="font-semibold">Informations société</Label>
-                        <div className="space-y-1">
-                          <Label>Date Création</Label>
-                          <Input type="date" value={newClientCreatedDate} onChange={(e) => setNewClientCreatedDate(e.target.value)} />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Téléphone</Label>
-                          <Input value={newClientPhone} onChange={(e) => setNewClientPhone(e.target.value)} placeholder="+212 ..." />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>GSM</Label>
-                          <Input value={newClientGsm} onChange={(e) => setNewClientGsm(e.target.value)} placeholder="+212 ..." />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Fax</Label>
-                          <Input value={newClientFax} onChange={(e) => setNewClientFax(e.target.value)} placeholder="Fax" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Email</Label>
-                          <Input value={newClientEmail} onChange={(e) => setNewClientEmail(e.target.value)} placeholder="email@client.com" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Site Web</Label>
-                          <Input value={newClientWebsite} onChange={(e) => setNewClientWebsite(e.target.value)} placeholder="https://..." />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 justify-end">
-                      <Button variant="outline" onClick={() => setClientFormOpen(false)}>Annuler</Button>
-                      <Button onClick={handleCreateClient}>Enregistrer</Button>
-                    </div>
+                  <CardContent>
+                    <UnifiedClientForm
+                      values={{
+                        sourceModule: 'facturation',
+                        type: newClientType,
+                        name: newClientName,
+                        company: '',
+                        email: newClientEmail,
+                        phone: newClientPhone,
+                        gsm: newClientGsm,
+                        fax: newClientFax,
+                        website: newClientWebsite,
+                        address: newClientAddress,
+                        postalCode: newClientPostalCode,
+                        city: newClientCity,
+                        country: newClientCountry,
+                        ice: newClientIce,
+                        ifCode: newClientIf,
+                        rcCode: newClientRc,
+                        createdDate: newClientCreatedDate,
+                        notes: newClientNotes,
+                      }}
+                      onChange={setUnifiedFacturationClientField}
+                      onSubmit={handleCreateClient}
+                      onCancel={() => setClientFormOpen(false)}
+                    />
                   </CardContent>
                 </Card>
               )}

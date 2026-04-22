@@ -1,56 +1,216 @@
+import { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Users, Palmtree, PackageCheck, TrendingUp, Building2, UserPlus } from 'lucide-react';
-import { useTourismClients } from '@/hooks/useTourism';
-import { useTMSClients } from '@/hooks/useTMS';
-import { ClientsList as TourismClientsList } from '@/components/tourism/ClientsList';
-import { ClientsList as TMSClientsList } from '@/components/tms/ClientsList';
-import { useMemo, useState } from 'react';
+import { Users, UserPlus } from 'lucide-react';
+import { useTourismClients, useCreateTourismClient } from '@/hooks/useTourism';
+import { useTMSClients, useCreateTMSClient } from '@/hooks/useTMS';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ClientForm as TourismClientForm } from '@/components/tourism/ClientForm';
-import { ClientForm as TMSClientForm } from '@/components/tms/ClientForm';
-import { useAppSettings } from '@/hooks/useAppSettings';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { UnifiedClientForm, type UnifiedClientFormValues } from '@/components/clients/UnifiedClientForm';
+import { getUnifiedClientsRegistry, type UnifiedClientModule, upsertUnifiedClientRecord } from '@/lib/unifiedClients';
+
+type UnifiedListRow = {
+  id: string;
+  sourceModule: UnifiedClientModule;
+  sourceId: string;
+  name: string;
+  company: string;
+  phone: string;
+  email: string;
+  city: string;
+};
 
 export default function Clients() {
   const { data: tourismClients = [] } = useTourismClients();
   const { data: tmsClients = [] } = useTMSClients();
+  const createTourismClient = useCreateTourismClient();
+  const createTmsClient = useCreateTMSClient();
   const [search, setSearch] = useState('');
-  const [showTourismClientForm, setShowTourismClientForm] = useState(false);
-  const { moduleSettings } = useAppSettings();
+  const [showUnifiedClientForm, setShowUnifiedClientForm] = useState(false);
+  const [registryVersion, setRegistryVersion] = useState(0);
+  const [formValues, setFormValues] = useState<UnifiedClientFormValues>({
+    sourceModule: 'facturation',
+    type: 'societe',
+    name: '',
+    company: '',
+    email: '',
+    phone: '',
+    gsm: '',
+    fax: '',
+    website: '',
+    address: '',
+    postalCode: '',
+    city: '',
+    country: 'Maroc',
+    ice: '',
+    ifCode: '',
+    rcCode: '',
+    createdDate: new Date().toISOString().slice(0, 10),
+    notes: '',
+  });
 
-  const showTourism = moduleSettings?.transport_touristique !== false;
-  const showTMS = moduleSettings?.transport_tms !== false;
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'unified-clients-registry-v1') {
+        setRegistryVersion((v) => v + 1);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
-  const tourismCount = showTourism ? tourismClients.length : 0;
-  const tmsCount = showTMS ? tmsClients.length : 0;
-  const total = tourismCount + tmsCount;
+  const registryClients = useMemo(() => getUnifiedClientsRegistry(), [registryVersion]);
 
-  // Calculate companies vs individuals (simple heuristic: has company name)
-  const companyCount = useMemo(() => {
-    const tourismCompanies = tourismClients.filter(c => !!c.company).length;
-    const tmsCompanies = tmsClients.filter(c => !!c.company).length;
-    return (showTourism ? tourismCompanies : 0) + (showTMS ? tmsCompanies : 0);
-  }, [tourismClients, tmsClients, showTourism, showTMS]);
+  const unifiedRows = useMemo(() => {
+    const fromTourism: UnifiedListRow[] = tourismClients.map((client) => ({
+      id: `tour-${client.id}`,
+      sourceModule: 'touristique',
+      sourceId: client.id,
+      name: client.name,
+      company: client.company || '',
+      phone: client.phone || '',
+      email: client.email || '',
+      city: '',
+    }));
+    const fromTms: UnifiedListRow[] = tmsClients.map((client) => ({
+      id: `tms-${client.id}`,
+      sourceModule: 'tms',
+      sourceId: client.id,
+      name: client.name,
+      company: client.company || '',
+      phone: client.phone || '',
+      email: client.email || '',
+      city: client.city || '',
+    }));
+    const fromFacturation: UnifiedListRow[] = registryClients
+      .filter((item) => item.source_module === 'facturation')
+      .map((item) => ({
+        id: item.id,
+        sourceModule: 'facturation',
+        sourceId: item.source_id,
+        name: item.name,
+        company: item.company || '',
+        phone: item.phone || '',
+        email: item.email || '',
+        city: item.city || '',
+      }));
+    return [...fromFacturation, ...fromTourism, ...fromTms];
+  }, [tourismClients, tmsClients, registryClients]);
 
-  const searchLower = search.toLowerCase();
-  const match = (v: string | null | undefined) => (v || '').toLowerCase().includes(searchLower);
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return unifiedRows;
+    const q = search.trim().toLowerCase();
+    return unifiedRows.filter((row) =>
+      `${row.name} ${row.company} ${row.phone} ${row.email} ${row.city}`.toLowerCase().includes(q)
+    );
+  }, [unifiedRows, search]);
 
-  const filteredTourism = useMemo(() => {
-    if (!search) return tourismClients;
-    return tourismClients.filter(c => match(c.name) || match(c.company) || match(c.email) || match(c.phone));
-  }, [tourismClients, search]);
+  const resetForm = () => {
+    setFormValues({
+      sourceModule: 'facturation',
+      type: 'societe',
+      name: '',
+      company: '',
+      email: '',
+      phone: '',
+      gsm: '',
+      fax: '',
+      website: '',
+      address: '',
+      postalCode: '',
+      city: '',
+      country: 'Maroc',
+      ice: '',
+      ifCode: '',
+      rcCode: '',
+      createdDate: new Date().toISOString().slice(0, 10),
+      notes: '',
+    });
+  };
 
-  const filteredTMS = useMemo(() => {
-    if (!search) return tmsClients;
-    return tmsClients.filter(c => match(c.name) || match(c.company) || match(c.email) || match(c.phone) || match(c.city) || match(c.ice));
-  }, [tmsClients, search]);
+  const handleCreateUnifiedClient = async () => {
+    const name = formValues.name.trim();
+    if (!name) return;
+    const notes = [
+      formValues.notes.trim(),
+      formValues.gsm.trim() ? `GSM: ${formValues.gsm.trim()}` : '',
+      formValues.fax.trim() ? `Fax: ${formValues.fax.trim()}` : '',
+      formValues.website.trim() ? `Web: ${formValues.website.trim()}` : '',
+      formValues.postalCode.trim() ? `CP: ${formValues.postalCode.trim()}` : '',
+      formValues.country.trim() ? `Pays: ${formValues.country.trim()}` : '',
+      formValues.ifCode.trim() ? `IF: ${formValues.ifCode.trim()}` : '',
+      formValues.rcCode.trim() ? `RC: ${formValues.rcCode.trim()}` : '',
+      formValues.createdDate.trim() ? `Création: ${formValues.createdDate.trim()}` : '',
+      formValues.type ? `Type: ${formValues.type}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
 
-  const defaultTab = showTourism ? 'tourism' : 'tms';
-  const tabCols = (showTourism && showTMS) ? 'grid-cols-2' : 'grid-cols-1';
+    if (formValues.sourceModule === 'touristique') {
+      const created = await createTourismClient.mutateAsync({
+        name,
+        email: formValues.email.trim() || null,
+        phone: formValues.phone.trim() || null,
+        company: formValues.company.trim() || null,
+        address: formValues.address.trim() || null,
+        notes: notes || null,
+      });
+      upsertUnifiedClientRecord({
+        source_module: 'touristique',
+        source_id: created.id,
+        name: created.name,
+        company: created.company,
+        phone: created.phone,
+        email: created.email,
+        address: created.address,
+        city: null,
+        ice: formValues.ice.trim() || null,
+        notes: created.notes,
+      });
+    } else if (formValues.sourceModule === 'tms') {
+      const created = await createTmsClient.mutateAsync({
+        name,
+        company: formValues.company.trim() || null,
+        phone: formValues.phone.trim() || null,
+        email: formValues.email.trim() || null,
+        address: formValues.address.trim() || null,
+        city: formValues.city.trim() || null,
+        ice: formValues.ice.trim() || null,
+        notes: notes || null,
+      });
+      upsertUnifiedClientRecord({
+        source_module: 'tms',
+        source_id: created.id,
+        name: created.name,
+        company: created.company,
+        phone: created.phone,
+        email: created.email,
+        address: created.address,
+        city: created.city,
+        ice: created.ice,
+        notes: created.notes,
+      });
+    } else {
+      upsertUnifiedClientRecord({
+        source_module: 'facturation',
+        source_id: `facturation-${Date.now()}`,
+        name,
+        company: formValues.company.trim() || null,
+        phone: formValues.phone.trim() || null,
+        email: formValues.email.trim() || null,
+        address: formValues.address.trim() || null,
+        city: formValues.city.trim() || null,
+        ice: formValues.ice.trim() || null,
+        notes: notes || null,
+      });
+    }
+
+    setRegistryVersion((v) => v + 1);
+    setShowUnifiedClientForm(false);
+    resetForm();
+  };
 
   return (
     <DashboardLayout>
@@ -58,130 +218,80 @@ export default function Clients() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Gestion des Clients</h1>
-            <p className="text-muted-foreground">Gérez votre portefeuille client et suivez les performances.</p>
+            <p className="text-muted-foreground">Liste client unifiée pour Facturation, Touristique et TMS.</p>
           </div>
-          <div className="flex gap-2">
-            {showTourism && (
-              <Dialog open={showTourismClientForm} onOpenChange={setShowTourismClientForm}>
-                <Button onClick={() => setShowTourismClientForm(true)}>
-                  <UserPlus className="w-4 h-4 mr-2" />
-                  Nouveau Client (Tourisme)
-                </Button>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Nouveau client (Touristique)</DialogTitle>
-                  </DialogHeader>
-                  <TourismClientForm onSuccess={() => setShowTourismClientForm(false)} />
-                </DialogContent>
-              </Dialog>
-            )}
-            {showTMS && (
-              <TMSClientForm />
-            )}
-          </div>
+          <Dialog open={showUnifiedClientForm} onOpenChange={setShowUnifiedClientForm}>
+            <Button onClick={() => setShowUnifiedClientForm(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Nouveau client
+            </Button>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Nouveau client</DialogTitle>
+              </DialogHeader>
+              <UnifiedClientForm
+                values={formValues}
+                onChange={(field, value) => setFormValues((prev) => ({ ...prev, [field]: value }))}
+                onSubmit={handleCreateUnifiedClient}
+                onCancel={() => setShowUnifiedClientForm(false)}
+                isSubmitting={createTourismClient.isPending || createTmsClient.isPending}
+                showSourceModule
+              />
+            </DialogContent>
+          </Dialog>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="dashboard-panel">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{total}</div>
-              <p className="text-xs text-muted-foreground">
-                Portefeuille global
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="dashboard-panel">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Sociétés</CardTitle>
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{companyCount}</div>
-              <p className="text-xs text-muted-foreground">
-                Clients B2B
-              </p>
-            </CardContent>
-          </Card>
-          {showTourism && (
-            <Card className="dashboard-panel">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Tourisme</CardTitle>
-                <Palmtree className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{tourismCount}</div>
-                <p className="text-xs text-muted-foreground">
-                  Clients touristiques
-                </p>
-              </CardContent>
-            </Card>
-          )}
-          {showTMS && (
-            <Card className="dashboard-panel">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Logistique (TMS)</CardTitle>
-                <PackageCheck className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{tmsCount}</div>
-                <p className="text-xs text-muted-foreground">
-                  Clients transport
-                </p>
-              </CardContent>
-            </Card>
-          )}
+        <div className="relative flex-1 max-w-sm">
+          <Input
+            placeholder="Rechercher par nom, téléphone, email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+          <Users className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Input
-              placeholder="Rechercher par nom, téléphone, email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
-            />
-            <Users className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
-          </div>
-        </div>
-
-        {(showTourism || showTMS) ? (
-          <Tabs defaultValue={defaultTab} className="space-y-4">
-            <TabsList className={`grid ${tabCols} w-full max-w-md`}>
-              {showTourism && (
-                <TabsTrigger value="tourism" className="flex items-center gap-2">
-                  <Palmtree className="w-4 h-4" /> Transport Touristique
-                </TabsTrigger>
-              )}
-              {showTMS && (
-                <TabsTrigger value="tms" className="flex items-center gap-2">
-                  <PackageCheck className="w-4 h-4" /> Transport TMS
-                </TabsTrigger>
-              )}
-            </TabsList>
-
-            {showTourism && (
-              <TabsContent value="tourism">
-                <TourismClientsList />
-              </TabsContent>
+        <Card className="dashboard-panel">
+          <CardHeader>
+            <CardTitle>Liste client</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {filteredRows.length === 0 ? (
+              <div className="p-10 text-center text-sm text-muted-foreground">Aucun client enregistré</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nom</TableHead>
+                    <TableHead>Société</TableHead>
+                    <TableHead>Section</TableHead>
+                    <TableHead>Téléphone</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Ville</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredRows.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">{row.name}</TableCell>
+                      <TableCell>{row.company || '-'}</TableCell>
+                      <TableCell>
+                        {row.sourceModule === 'facturation'
+                          ? 'Facturation'
+                          : row.sourceModule === 'touristique'
+                            ? 'Transport Touristique'
+                            : 'Transport TMS'}
+                      </TableCell>
+                      <TableCell>{row.phone || '-'}</TableCell>
+                      <TableCell>{row.email || '-'}</TableCell>
+                      <TableCell>{row.city || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
-            {showTMS && (
-              <TabsContent value="tms">
-                <TMSClientsList />
-              </TabsContent>
-            )}
-          </Tabs>
-        ) : (
-          <Card className="dashboard-panel">
-            <CardContent className="p-6 text-center text-sm text-muted-foreground">
-              Aucun module client activé
-            </CardContent>
-          </Card>
-        )}
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );
