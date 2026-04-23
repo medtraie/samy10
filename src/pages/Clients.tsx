@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Input } from '@/components/ui/input';
-import { Users, UserPlus } from 'lucide-react';
-import { useTourismClients, useCreateTourismClient } from '@/hooks/useTourism';
+import { Users, UserPlus, Pencil } from 'lucide-react';
+import { useTourismClients, useCreateTourismClient, useUpdateTourismClient } from '@/hooks/useTourism';
 import { useTMSClients, useCreateTMSClient } from '@/hooks/useTMS';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -10,6 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { UnifiedClientForm, type UnifiedClientFormValues } from '@/components/clients/UnifiedClientForm';
 import { getUnifiedClientsRegistry, type UnifiedClientModule, upsertUnifiedClientRecord } from '@/lib/unifiedClients';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 type UnifiedListRow = {
   id: string;
@@ -23,14 +26,40 @@ type UnifiedListRow = {
 };
 
 export default function Clients() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { data: tourismClients = [] } = useTourismClients();
   const { data: tmsClients = [] } = useTMSClients();
   const createTourismClient = useCreateTourismClient();
   const createTmsClient = useCreateTMSClient();
+  const updateTourismClient = useUpdateTourismClient();
   const [search, setSearch] = useState('');
   const [showUnifiedClientForm, setShowUnifiedClientForm] = useState(false);
+  const [showEditClientForm, setShowEditClientForm] = useState(false);
+  const [editingRow, setEditingRow] = useState<UnifiedListRow | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [registryVersion, setRegistryVersion] = useState(0);
   const [formValues, setFormValues] = useState<UnifiedClientFormValues>({
+    sourceModule: 'facturation',
+    type: 'societe',
+    name: '',
+    company: '',
+    email: '',
+    phone: '',
+    gsm: '',
+    fax: '',
+    website: '',
+    address: '',
+    postalCode: '',
+    city: '',
+    country: 'Maroc',
+    ice: '',
+    ifCode: '',
+    rcCode: '',
+    createdDate: new Date().toISOString().slice(0, 10),
+    notes: '',
+  });
+  const [editValues, setEditValues] = useState<UnifiedClientFormValues>({
     sourceModule: 'facturation',
     type: 'societe',
     name: '',
@@ -212,6 +241,120 @@ export default function Clients() {
     resetForm();
   };
 
+  const openEditClient = (row: UnifiedListRow) => {
+    const fromRegistry = getUnifiedClientsRegistry().find(
+      (item) => item.source_module === row.sourceModule && item.source_id === row.sourceId
+    );
+    const tourism = row.sourceModule === 'touristique' ? tourismClients.find((c) => c.id === row.sourceId) : null;
+    const tms = row.sourceModule === 'tms' ? tmsClients.find((c) => c.id === row.sourceId) : null;
+    setEditingRow(row);
+    setEditValues({
+      sourceModule: row.sourceModule,
+      type: 'societe',
+      name: row.name || '',
+      company: row.company || '',
+      email: row.email || '',
+      phone: row.phone || '',
+      gsm: '',
+      fax: '',
+      website: '',
+      address: fromRegistry?.address || tourism?.address || tms?.address || '',
+      postalCode: '',
+      city: row.city || (tms?.city || ''),
+      country: 'Maroc',
+      ice: fromRegistry?.ice || tms?.ice || '',
+      ifCode: '',
+      rcCode: '',
+      createdDate: new Date().toISOString().slice(0, 10),
+      notes: fromRegistry?.notes || tourism?.notes || tms?.notes || '',
+    });
+    setShowEditClientForm(true);
+  };
+
+  const handleUpdateClient = async () => {
+    if (!editingRow) return;
+    const name = editValues.name.trim();
+    if (!name) return;
+    setIsSavingEdit(true);
+    try {
+      if (editingRow.sourceModule === 'facturation') {
+        upsertUnifiedClientRecord({
+          source_module: 'facturation',
+          source_id: editingRow.sourceId,
+          name,
+          company: editValues.company.trim() || null,
+          phone: editValues.phone.trim() || null,
+          email: editValues.email.trim() || null,
+          address: editValues.address.trim() || null,
+          city: editValues.city.trim() || null,
+          ice: editValues.ice.trim() || null,
+          notes: editValues.notes.trim() || null,
+        });
+      } else if (editingRow.sourceModule === 'touristique') {
+        const updated = await updateTourismClient.mutateAsync({
+          id: editingRow.sourceId,
+          name,
+          company: editValues.company.trim() || null,
+          phone: editValues.phone.trim() || null,
+          email: editValues.email.trim() || null,
+          address: editValues.address.trim() || null,
+          notes: editValues.notes.trim() || null,
+        });
+        upsertUnifiedClientRecord({
+          source_module: 'touristique',
+          source_id: updated.id,
+          name: updated.name,
+          company: updated.company,
+          phone: updated.phone,
+          email: updated.email,
+          address: updated.address,
+          city: null,
+          ice: editValues.ice.trim() || null,
+          notes: updated.notes,
+        });
+      } else {
+        const { data, error } = await supabase
+          .from('tms_clients')
+          .update({
+            name,
+            company: editValues.company.trim() || null,
+            phone: editValues.phone.trim() || null,
+            email: editValues.email.trim() || null,
+            address: editValues.address.trim() || null,
+            city: editValues.city.trim() || null,
+            ice: editValues.ice.trim() || null,
+            notes: editValues.notes.trim() || null,
+          })
+          .eq('id', editingRow.sourceId)
+          .select()
+          .single();
+        if (error) throw error;
+        upsertUnifiedClientRecord({
+          source_module: 'tms',
+          source_id: data.id,
+          name: data.name,
+          company: data.company,
+          phone: data.phone,
+          email: data.email,
+          address: data.address,
+          city: data.city,
+          ice: data.ice,
+          notes: data.notes,
+        });
+        await queryClient.invalidateQueries({ queryKey: ['tms_clients'] });
+      }
+      setRegistryVersion((v) => v + 1);
+      setShowEditClientForm(false);
+      setEditingRow(null);
+      toast({ title: 'Succès', description: 'Client modifié avec succès.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la modification du client.';
+      toast({ title: 'Erreur', description: message, variant: 'destructive' });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -229,14 +372,32 @@ export default function Clients() {
               <DialogHeader>
                 <DialogTitle>Nouveau client</DialogTitle>
               </DialogHeader>
-              <UnifiedClientForm
-                values={formValues}
-                onChange={(field, value) => setFormValues((prev) => ({ ...prev, [field]: value }))}
-                onSubmit={handleCreateUnifiedClient}
-                onCancel={() => setShowUnifiedClientForm(false)}
-                isSubmitting={createTourismClient.isPending || createTmsClient.isPending}
-                showSourceModule
-              />
+              <div className="max-h-[72vh] overflow-y-auto pr-1">
+                <UnifiedClientForm
+                  values={formValues}
+                  onChange={(field, value) => setFormValues((prev) => ({ ...prev, [field]: value }))}
+                  onSubmit={handleCreateUnifiedClient}
+                  onCancel={() => setShowUnifiedClientForm(false)}
+                  isSubmitting={createTourismClient.isPending || createTmsClient.isPending}
+                  showSourceModule
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={showEditClientForm} onOpenChange={setShowEditClientForm}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Modifier client</DialogTitle>
+              </DialogHeader>
+              <div className="max-h-[72vh] overflow-y-auto pr-1">
+                <UnifiedClientForm
+                  values={editValues}
+                  onChange={(field, value) => setEditValues((prev) => ({ ...prev, [field]: value }))}
+                  onSubmit={handleUpdateClient}
+                  onCancel={() => setShowEditClientForm(false)}
+                  isSubmitting={isSavingEdit || updateTourismClient.isPending}
+                />
+              </div>
             </DialogContent>
           </Dialog>
         </div>
@@ -268,6 +429,7 @@ export default function Clients() {
                     <TableHead>Téléphone</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Ville</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -285,6 +447,12 @@ export default function Clients() {
                       <TableCell>{row.phone || '-'}</TableCell>
                       <TableCell>{row.email || '-'}</TableCell>
                       <TableCell>{row.city || '-'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" variant="outline" onClick={() => openEditClient(row)}>
+                          <Pencil className="w-4 h-4 mr-1" />
+                          Modifier
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

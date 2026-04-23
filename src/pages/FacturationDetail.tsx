@@ -1187,12 +1187,12 @@ export default function FacturationDetail() {
                   ) : null}
                 </div>
                 <div className="border rounded-md overflow-hidden">
-                  <Table>
+                  <Table className="w-full">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[52%] min-w-[260px]">Description</TableHead>
-                        <TableHead className="w-[90px] text-right">Qté</TableHead>
-                        <TableHead className="w-[110px] text-right">PU</TableHead>
+                        <TableHead className="w-[50%] min-w-[240px]">Description</TableHead>
+                        <TableHead className="w-[100px] text-right">Qté</TableHead>
+                        <TableHead className="w-[120px] text-right">PU</TableHead>
                         <TableHead className="w-[90px] text-right">TVA</TableHead>
                         <TableHead className="text-right">Total</TableHead>
                       </TableRow>
@@ -1203,10 +1203,10 @@ export default function FacturationDetail() {
                       ) : (
                         items.map((item, idx) => (
                           <TableRow key={item.id}>
-                            <TableCell className="w-[52%] min-w-[260px]">
+                            <TableCell className="w-[50%] min-w-[240px]">
                               <Input value={item.description} onChange={(e) => updateItem(idx, { description: e.target.value })} />
                             </TableCell>
-                            <TableCell className="w-[90px] text-right">
+                            <TableCell className="w-[100px] text-right">
                               <Input
                                 type="number"
                                 value={item.quantity === 0 ? '' : item.quantity}
@@ -1218,11 +1218,11 @@ export default function FacturationDetail() {
                                   }
                                 }}
                                 onFocus={(e) => e.currentTarget.select()}
-                                className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-9 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 placeholder="Qté"
                               />
                             </TableCell>
-                            <TableCell className="w-[110px] text-right">
+                            <TableCell className="w-[120px] text-right">
                               <Input
                                 type="number"
                                 value={item.unit_price === 0 ? '' : item.unit_price}
@@ -1234,7 +1234,7 @@ export default function FacturationDetail() {
                                   }
                                 }}
                                 onFocus={(e) => e.currentTarget.select()}
-                                className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-9 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 placeholder="PU"
                               />
                             </TableCell>
