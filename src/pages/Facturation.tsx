@@ -52,7 +52,7 @@ import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { UnifiedClientForm, type UnifiedClientFormValues } from '@/components/clients/UnifiedClientForm';
-import { upsertUnifiedClientRecord } from '@/lib/unifiedClients';
+import { getUnifiedClientsRegistry, upsertUnifiedClientRecord } from '@/lib/unifiedClients';
 
 type EditorState = {
   id?: string;
@@ -140,6 +140,7 @@ export default function Facturation() {
   const [clientFormOpen, setClientFormOpen] = useState(false);
   const [newClientType, setNewClientType] = useState<'societe' | 'particulier'>('societe');
   const [newClientName, setNewClientName] = useState('');
+  const [newClientCompany, setNewClientCompany] = useState('');
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientPostalCode, setNewClientPostalCode] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
@@ -184,6 +185,7 @@ export default function Facturation() {
     gsm: string;
     fax: string;
     website: string;
+    company: string;
     ice: string;
     ifCode: string;
     rcCode: string;
@@ -265,6 +267,36 @@ export default function Facturation() {
   const createEvent = useCreateFactDocumentEvent();
   const sendEmail = useSendFactDocumentEmail();
   const sendWhatsApp = useSendFactDocumentWhatsApp();
+
+  useEffect(() => {
+    setManualClients((prev) => {
+      if (prev.length > 0) return prev;
+      const registryFacturationClients = getUnifiedClientsRegistry()
+        .filter((item) => item.source_module === 'facturation')
+        .map((item) => ({
+          id: item.source_id,
+          name: item.name || 'Client',
+          city: item.city || 'Casablanca',
+          email: item.email || `${(item.name || 'client').replace(/\s+/g, '.').toLowerCase()}@client.com`,
+          phone: item.phone || '+212 600000000',
+          total: 0,
+          clientType: 'societe' as const,
+          address: item.address || '',
+          postalCode: '',
+          country: 'Maroc',
+          gsm: '',
+          fax: '',
+          website: '',
+          company: item.company || '',
+          ice: item.ice || '',
+          ifCode: '',
+          rcCode: '',
+          createdDate: (item.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+          notes: item.notes || '',
+        }));
+      return registryFacturationClients;
+    });
+  }, []);
   const achatsSuppliersQ = useAchatsSuppliers();
   const purchaseOrdersQ = usePurchaseOrders();
   const supplierInvoicesQ = useSupplierInvoices();
@@ -870,6 +902,7 @@ export default function Facturation() {
         email: `${row.client.replace(/\s+/g, '.').toLowerCase()}@client.com`,
         phone: `+212 6${(20000000 + idx * 1777).toString().slice(0, 8)}`,
         total: row.total,
+        company: '',
         notes: '',
       }));
     const clients = [...manualClients, ...inferredClients];
@@ -1006,6 +1039,7 @@ export default function Facturation() {
     setContactsTab('clients');
     setNewClientType('societe');
     setNewClientName('');
+    setNewClientCompany('');
     setNewClientAddress('');
     setNewClientPostalCode('');
     setNewClientEmail('');
@@ -1065,6 +1099,7 @@ export default function Facturation() {
         gsm: newClientGsm.trim(),
         fax: newClientFax.trim(),
         website: newClientWebsite.trim(),
+        company: newClientCompany.trim(),
         ice: newClientIce.trim(),
         ifCode: newClientIf.trim(),
         rcCode: newClientRc.trim(),
@@ -1077,7 +1112,7 @@ export default function Facturation() {
       source_module: 'facturation',
       source_id: sourceId,
       name,
-      company: null,
+      company: newClientCompany.trim() || null,
       phone: newClientPhone.trim() || null,
       email: newClientEmail.trim() || null,
       address: newClientAddress.trim() || null,
@@ -1089,6 +1124,7 @@ export default function Facturation() {
     setClientFormOpen(false);
     setNewClientType('societe');
     setNewClientName('');
+    setNewClientCompany('');
     setNewClientAddress('');
     setNewClientPostalCode('');
     setNewClientEmail('');
@@ -1119,7 +1155,7 @@ export default function Facturation() {
         setNewClientName(String(value));
         return;
       case 'company':
-        // Facturation local clients don't persist a dedicated company field yet.
+        setNewClientCompany(String(value));
         return;
       case 'email':
         setNewClientEmail(String(value));
@@ -1995,7 +2031,7 @@ export default function Facturation() {
                         sourceModule: 'facturation',
                         type: newClientType,
                         name: newClientName,
-                        company: '',
+                        company: newClientCompany,
                         email: newClientEmail,
                         phone: newClientPhone,
                         gsm: newClientGsm,
