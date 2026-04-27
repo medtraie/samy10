@@ -51,6 +51,7 @@ import { Activity, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, Chevro
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import JSZip from 'jszip';
 import { UnifiedClientForm, type UnifiedClientFormValues } from '@/components/clients/UnifiedClientForm';
 import { getUnifiedClientsRegistry, upsertUnifiedClientRecord } from '@/lib/unifiedClients';
 
@@ -254,6 +255,7 @@ export default function Facturation() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('all');
+  const [invoiceMonthFilter, setInvoiceMonthFilter] = useState('');
   const [currentStage, setCurrentStage] = useState<FactDocumentType>('facture');
   const [editorOpen, setEditorOpen] = useState(false);
   const [customColumnDraft, setCustomColumnDraft] = useState('');
@@ -640,6 +642,7 @@ export default function Facturation() {
     setSearchQuery('');
     setStatusFilter('all');
     setPeriodFilter('all');
+    setInvoiceMonthFilter('');
   };
 
   const filteredDocs = useMemo(() => {
@@ -668,9 +671,13 @@ export default function Facturation() {
         const d = new Date(doc.issue_date);
         if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false;
       }
+      if (currentStage === 'facture' && invoiceMonthFilter) {
+        const issueMonth = (doc.issue_date || '').slice(0, 7);
+        if (issueMonth !== invoiceMonthFilter) return false;
+      }
       return true;
     });
-  }, [docs, currentStage, statusFilter, searchQuery, periodFilter]);
+  }, [docs, currentStage, statusFilter, searchQuery, periodFilter, invoiceMonthFilter]);
 
   const clientsSummary = useMemo(() => {
     const map = new Map<string, { client: string; count: number; total: number }>();
@@ -686,7 +693,7 @@ export default function Facturation() {
 
   useEffect(() => {
     setSalesPage(1);
-  }, [currentStage, statusFilter, searchQuery, periodFilter, rowsPerPage]);
+  }, [currentStage, statusFilter, searchQuery, periodFilter, invoiceMonthFilter, rowsPerPage]);
 
   const salesTotalPages = useMemo(() => Math.max(1, Math.ceil(filteredDocs.length / rowsPerPage)), [filteredDocs.length, rowsPerPage]);
   const salesPageSafe = Math.min(Math.max(1, salesPage), salesTotalPages);
@@ -1433,6 +1440,100 @@ export default function Facturation() {
     });
   };
 
+  const handleDownloadInvoicePdfBlob = (id: string): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      let completed = false;
+      let timeoutId: number | null = null;
+
+      const finish = () => {
+        if (completed) return;
+        completed = true;
+        window.removeEventListener('message', onMessage);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        if (iframe.parentNode) iframe.remove();
+      };
+
+      const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.source !== iframe.contentWindow) return;
+        const payload = event.data as
+          | { type?: string; invoiceId?: string; buffer?: ArrayBuffer; error?: string }
+          | undefined;
+        if (!payload || payload.invoiceId !== id) return;
+
+        if (payload.type === 'facturation:invoice_pdf_blob' && payload.buffer instanceof ArrayBuffer) {
+          finish();
+          resolve(new Blob([payload.buffer], { type: 'application/pdf' }));
+          return;
+        }
+
+        if (payload.type === 'facturation:invoice_pdf_blob_error') {
+          finish();
+          reject(new Error(payload.error || 'Échec de génération du PDF.'));
+        }
+      };
+
+      window.addEventListener('message', onMessage);
+      iframe.src = `/facturation/${id}?download_blob=1`;
+      document.body.appendChild(iframe);
+
+      timeoutId = window.setTimeout(() => {
+        finish();
+        reject(new Error('Délai dépassé lors de la génération du PDF.'));
+      }, 60000);
+    });
+
+  const handleExportSelectedInvoicesZip = async (forcedIds?: string[]) => {
+    const ids = Array.isArray(forcedIds) ? forcedIds : selectedInvoiceIds;
+    const selectedDocs = docs
+      .filter((d) => ids.includes(d.id) && d.doc_type === 'facture')
+      .sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    if (selectedDocs.length === 0) {
+      toast({
+        title: 'Aucune sélection',
+        description: 'Sélectionnez au moins une facture avant de télécharger le ZIP.',
+      });
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+      for (let index = 0; index < selectedDocs.length; index += 1) {
+        const doc = selectedDocs[index];
+        const pdfBlob = await handleDownloadInvoicePdfBlob(doc.id);
+        const safeNumber = (doc.doc_number || `facture-${index + 1}`).replace(/[\\/:*?"<>|]+/g, '-');
+        zip.file(`${String(index + 1).padStart(2, '0')}-${safeNumber}.pdf`, pdfBlob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const zipUrl = URL.createObjectURL(zipBlob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = zipUrl;
+      downloadLink.download = `factures-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      URL.revokeObjectURL(zipUrl);
+
+      toast({
+        title: 'ZIP téléchargé',
+        description:
+          selectedDocs.length === 1
+            ? 'La facture sélectionnée a été téléchargée en ZIP.'
+            : `${selectedDocs.length} factures ont été regroupées dans un ZIP.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la création du fichier ZIP.';
+      toast({
+        title: 'Échec téléchargement ZIP',
+        description: message,
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleCreateCreditNote = async () => {
     if (selectedInvoiceIds.length !== 1) {
       toast({
@@ -1679,6 +1780,25 @@ export default function Facturation() {
                       <SelectItem value="month">Ce mois</SelectItem>
                     </SelectContent>
                   </Select>
+                  {currentStage === 'facture' ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="date"
+                        className="w-[175px]"
+                        value={invoiceMonthFilter ? `${invoiceMonthFilter}-01` : ''}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setInvoiceMonthFilter(raw ? raw.slice(0, 7) : '');
+                        }}
+                        title="Filtre par mois (calendrier)"
+                      />
+                      {invoiceMonthFilter ? (
+                        <Button size="sm" variant="outline" onClick={() => setInvoiceMonthFilter('')}>
+                          Tout mois
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-[140px]">
                       <Filter className="w-4 h-4 mr-1" />
@@ -1819,6 +1939,10 @@ export default function Facturation() {
                     <Button size="sm" variant="outline" onClick={() => { void handleExportSelectedInvoicesPdf(); }} disabled={selectedInvoiceIds.length === 0}>
                       <FileDown className="w-4 h-4 mr-1" />
                       PDF sélection
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { void handleExportSelectedInvoicesZip(); }} disabled={selectedInvoiceIds.length === 0}>
+                      <FileDown className="w-4 h-4 mr-1" />
+                      Télécharger ZIP
                     </Button>
                     <Button size="sm" variant="outline" onClick={handleOpenScheduleDialog} disabled={selectedInvoiceIds.length === 0}>
                       <CalendarDays className="w-4 h-4 mr-1" />

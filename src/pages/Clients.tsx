@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Input } from '@/components/ui/input';
-import { Users, UserPlus, Pencil } from 'lucide-react';
+import { Users, UserPlus, Pencil, FileDown, FileUp } from 'lucide-react';
 import { useTourismClients, useCreateTourismClient, useUpdateTourismClient } from '@/hooks/useTourism';
 import { useTMSClients, useCreateTMSClient } from '@/hooks/useTMS';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ type UnifiedListRow = {
   sourceId: string;
   name: string;
   company: string;
+  ice: string;
   phone: string;
   email: string;
   city: string;
@@ -39,6 +40,7 @@ export default function Clients() {
   const [editingRow, setEditingRow] = useState<UnifiedListRow | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [registryVersion, setRegistryVersion] = useState(0);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [formValues, setFormValues] = useState<UnifiedClientFormValues>({
     sourceModule: 'facturation',
     type: 'societe',
@@ -93,12 +95,16 @@ export default function Clients() {
   const registryClients = useMemo(() => getUnifiedClientsRegistry(), [registryVersion]);
 
   const unifiedRows = useMemo(() => {
+    const registryBySource = new Map(
+      registryClients.map((item) => [`${item.source_module}:${item.source_id}`, item] as const)
+    );
     const fromTourism: UnifiedListRow[] = tourismClients.map((client) => ({
       id: `tour-${client.id}`,
       sourceModule: 'touristique',
       sourceId: client.id,
       name: client.name,
       company: client.company || '',
+      ice: registryBySource.get(`touristique:${client.id}`)?.ice || '',
       phone: client.phone || '',
       email: client.email || '',
       city: '',
@@ -109,6 +115,7 @@ export default function Clients() {
       sourceId: client.id,
       name: client.name,
       company: client.company || '',
+      ice: client.ice || registryBySource.get(`tms:${client.id}`)?.ice || '',
       phone: client.phone || '',
       email: client.email || '',
       city: client.city || '',
@@ -121,6 +128,7 @@ export default function Clients() {
         sourceId: item.source_id,
         name: item.name,
         company: item.company || '',
+        ice: item.ice || '',
         phone: item.phone || '',
         email: item.email || '',
         city: item.city || '',
@@ -132,7 +140,7 @@ export default function Clients() {
     if (!search.trim()) return unifiedRows;
     const q = search.trim().toLowerCase();
     return unifiedRows.filter((row) =>
-      `${row.name} ${row.company} ${row.phone} ${row.email} ${row.city}`.toLowerCase().includes(q)
+      `${row.name} ${row.ice} ${row.phone} ${row.email} ${row.city}`.toLowerCase().includes(q)
     );
   }, [unifiedRows, search]);
 
@@ -355,6 +363,84 @@ export default function Clients() {
     }
   };
 
+  const handleExportClientsExcel = async () => {
+    const XLSX = await import('xlsx');
+    const rows = filteredRows.map((row) => ({
+      Nom: row.name || '',
+      'Code ICE': row.ice || '',
+      Téléphone: row.phone || '',
+      Email: row.email || '',
+      Ville: row.city || '',
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
+    XLSX.writeFile(workbook, `liste-clients-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const handleImportClientsExcel = async (file: File) => {
+    try {
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        toast({ title: 'Import invalide', description: 'Le fichier Excel est vide.', variant: 'destructive' });
+        return;
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const data = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+      let imported = 0;
+      let ignored = 0;
+
+      for (let index = 0; index < data.length; index += 1) {
+        const row = data[index];
+        const getValue = (...keys: string[]) => {
+          for (const key of keys) {
+            if (row[key] !== undefined && row[key] !== null) return String(row[key]).trim();
+          }
+          return '';
+        };
+
+        const name = getValue('Nom', 'Name', 'Client', 'client');
+        if (!name) {
+          ignored += 1;
+          continue;
+        }
+
+        const company = getValue('Société', 'Societe', 'Company', 'company');
+        const ice = getValue('Code ICE', 'ICE', 'ice');
+        const phone = getValue('Téléphone', 'Telephone', 'Phone', 'phone');
+        const email = getValue('Email', 'email');
+        const city = getValue('Ville', 'City', 'city');
+
+        upsertUnifiedClientRecord({
+          source_module: 'facturation',
+          source_id: `import-${Date.now()}-${index}`,
+          name,
+          company: company || null,
+          phone: phone || null,
+          email: email || null,
+          address: null,
+          city: city || null,
+          ice: ice || null,
+          notes: 'Import Excel',
+        });
+        imported += 1;
+      }
+
+      setRegistryVersion((v) => v + 1);
+      toast({
+        title: 'Import terminé',
+        description: `${imported} client(s) importé(s), ${ignored} ligne(s) ignorée(s).`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erreur lors de l'import Excel.";
+      toast({ title: 'Import échoué', description: message, variant: 'destructive' });
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -363,6 +449,26 @@ export default function Clients() {
             <h1 className="text-2xl font-bold text-foreground">Gestion des Clients</h1>
             <p className="text-muted-foreground">Liste client unifiée pour Facturation, Touristique et TMS.</p>
           </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleImportClientsExcel(file);
+                e.currentTarget.value = '';
+              }}
+            />
+            <Button variant="outline" onClick={() => void handleExportClientsExcel()}>
+              <FileDown className="w-4 h-4 mr-2" />
+              Exporter Excel
+            </Button>
+            <Button variant="outline" onClick={() => importInputRef.current?.click()}>
+              <FileUp className="w-4 h-4 mr-2" />
+              Importer Excel
+            </Button>
           <Dialog open={showUnifiedClientForm} onOpenChange={setShowUnifiedClientForm}>
             <Button onClick={() => setShowUnifiedClientForm(true)}>
               <UserPlus className="w-4 h-4 mr-2" />
@@ -380,10 +486,12 @@ export default function Clients() {
                   onCancel={() => setShowUnifiedClientForm(false)}
                   isSubmitting={createTourismClient.isPending || createTmsClient.isPending}
                   showSourceModule
+                  showGsm={false}
                 />
               </div>
             </DialogContent>
           </Dialog>
+          </div>
           <Dialog open={showEditClientForm} onOpenChange={setShowEditClientForm}>
             <DialogContent className="max-w-3xl">
               <DialogHeader>
@@ -424,8 +532,7 @@ export default function Clients() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nom</TableHead>
-                    <TableHead>Société</TableHead>
-                    <TableHead>Section</TableHead>
+                    <TableHead>Code ICE</TableHead>
                     <TableHead>Téléphone</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Ville</TableHead>
@@ -436,14 +543,7 @@ export default function Clients() {
                   {filteredRows.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell>{row.company || '-'}</TableCell>
-                      <TableCell>
-                        {row.sourceModule === 'facturation'
-                          ? 'Facturation'
-                          : row.sourceModule === 'touristique'
-                            ? 'Transport Touristique'
-                            : 'Transport TMS'}
-                      </TableCell>
+                      <TableCell>{row.ice || '-'}</TableCell>
                       <TableCell>{row.phone || '-'}</TableCell>
                       <TableCell>{row.email || '-'}</TableCell>
                       <TableCell>{row.city || '-'}</TableCell>

@@ -38,6 +38,7 @@ type UnifiedClientFormProps = {
   showBusinessFields?: boolean;
   showCreatedDate?: boolean;
   showSourceModule?: boolean;
+  showGsm?: boolean;
 };
 
 export function UnifiedClientForm({
@@ -52,6 +53,7 @@ export function UnifiedClientForm({
   showBusinessFields = true,
   showCreatedDate = true,
   showSourceModule = false,
+  showGsm = true,
 }: UnifiedClientFormProps) {
   return (
     <div className="space-y-4">
@@ -158,10 +160,12 @@ export function UnifiedClientForm({
             <Label>Téléphone</Label>
             <Input value={values.phone} onChange={(e) => onChange('phone', e.target.value)} placeholder="+212 ..." />
           </div>
-          <div className="space-y-1">
-            <Label>GSM</Label>
-            <Input value={values.gsm} onChange={(e) => onChange('gsm', e.target.value)} placeholder="+212 ..." />
-          </div>
+          {showGsm ? (
+            <div className="space-y-1">
+              <Label>GSM</Label>
+              <Input value={values.gsm} onChange={(e) => onChange('gsm', e.target.value)} placeholder="+212 ..." />
+            </div>
+          ) : null}
           <div className="space-y-1">
             <Label>Fax</Label>
             <Input value={values.fax} onChange={(e) => onChange('fax', e.target.value)} placeholder="Fax" />

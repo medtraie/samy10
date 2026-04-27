@@ -173,6 +173,7 @@ export default function FacturationDetail() {
   const [status, setStatus] = useState('draft');
   const [timelineInvoiceFilter, setTimelineInvoiceFilter] = useState<'all' | 'paid' | 'unpaid' | 'partial'>('all');
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(true);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
@@ -968,8 +969,10 @@ export default function FacturationDetail() {
   }, [pdfPreviewUrl]);
 
   useEffect(() => {
-    const shouldAutoDownload = new URLSearchParams(location.search).get('download') === '1';
-    if (!shouldAutoDownload || autoDownloadDone || !data?.document) return;
+    const params = new URLSearchParams(location.search);
+    const shouldAutoDownload = params.get('download') === '1';
+    const shouldSendBlob = params.get('download_blob') === '1';
+    if ((!shouldAutoDownload && !shouldSendBlob) || autoDownloadDone || !data?.document) return;
     if (companyLoading) return;
     if (company?.logo_url && !logoDataUrl) return;
     if (companySignatureUrl && !signatureDataUrl) return;
@@ -1002,6 +1005,36 @@ export default function FacturationDetail() {
       },
     });
     if (!pdf) return;
+    if (shouldSendBlob) {
+      void (async () => {
+        try {
+          const blob = pdf.output('blob');
+          const buffer = await blob.arrayBuffer();
+          window.parent.postMessage(
+            {
+              type: 'facturation:invoice_pdf_blob',
+              invoiceId: data.document.id,
+              buffer,
+            },
+            window.location.origin
+          );
+        } catch (error) {
+          window.parent.postMessage(
+            {
+              type: 'facturation:invoice_pdf_blob_error',
+              invoiceId: data.document.id,
+              error: error instanceof Error ? error.message : 'Erreur génération PDF.',
+            },
+            window.location.origin
+          );
+        } finally {
+          setAutoDownloadDone(true);
+          navigate(location.pathname, { replace: true });
+        }
+      })();
+      return;
+    }
+
     pdf.save(`${data.document.doc_number}.pdf`);
     setAutoDownloadDone(true);
     navigate(location.pathname, { replace: true });
@@ -1015,10 +1048,15 @@ export default function FacturationDetail() {
                     <h1 className="text-2xl font-bold">Détail {currentDocLabel}</h1>
             <p className="text-muted-foreground">Consultation détaillée du document de facturation</p>
           </div>
-          <Button variant="outline" onClick={() => navigate('/facturation')}>
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Retour
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowTimeline((prev) => !prev)}>
+              {showTimeline ? 'Cacher Timeline' : 'Afficher Timeline'}
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/facturation')}>
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Retour
+            </Button>
+          </div>
         </div>
 
         {isLoading ? (
@@ -1027,7 +1065,7 @@ export default function FacturationDetail() {
           <Card><CardContent className="py-10 text-sm text-muted-foreground">Document introuvable.</CardContent></Card>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-            <Card className="xl:col-span-8">
+            <Card className={showTimeline ? 'xl:col-span-8' : 'xl:col-span-12'}>
               <CardHeader className="space-y-3">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <div>
@@ -1372,14 +1410,15 @@ export default function FacturationDetail() {
               </DialogContent>
             </Dialog>
 
-            <Card className="xl:col-span-4">
+            {showTimeline ? (
+              <Card className="xl:col-span-4">
               <CardHeader>
                 <CardTitle>Timeline</CardTitle>
                 <CardDescription>
                   {isInvoice ? 'Historique + toutes les factures du client' : `Historique + tous les ${currentDocLabel.toLowerCase()}s du client`}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">
                   {isInvoice ? 'Factures du client' : `${currentDocLabel}s du client`}
                 </div>
@@ -1428,7 +1467,8 @@ export default function FacturationDetail() {
                   ))
                 )}
               </CardContent>
-            </Card>
+              </Card>
+            ) : null}
           </div>
         )}
       </div>
