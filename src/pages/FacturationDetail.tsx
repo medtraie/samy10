@@ -148,6 +148,8 @@ const numberToFrenchWords = (n: number): string => {
   return parts.join(' ');
 };
 
+import { statusLabels } from './Facturation';
+
 export default function FacturationDetail() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -286,24 +288,27 @@ export default function FacturationDetail() {
   }, [data?.document, data?.events]);
 
   const paymentSummary = useMemo(() => {
-    const paid = paymentHistoryRows.reduce((acc, row) => acc + row.amount, 0);
     const total = Number(data?.document?.total_amount || 0);
+    if (status === 'paid') {
+      return { paid: total, remaining: 0, total };
+    }
+    const paid = paymentHistoryRows.reduce((acc, row) => acc + row.amount, 0);
     return {
       paid,
       remaining: Math.max(0, total - paid),
       total,
     };
-  }, [paymentHistoryRows, data?.document?.total_amount]);
+  }, [paymentHistoryRows, data?.document?.total_amount, status]);
 
   const paymentStamp = useMemo(() => {
-    if (paymentSummary.remaining <= 0.0001) {
+    if (status === 'paid' || paymentSummary.remaining <= 0.0001) {
       return { label: 'PAYE', className: 'bg-green-600/20 text-green-300 border-green-500/40' };
     }
     if (paymentSummary.paid > 0) {
       return { label: 'PARTIEL', className: 'bg-amber-500/20 text-amber-300 border-amber-400/40' };
     }
     return { label: 'NON PAYE', className: 'bg-red-600/20 text-red-300 border-red-500/40' };
-  }, [paymentSummary]);
+  }, [paymentSummary, status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -696,7 +701,7 @@ export default function FacturationDetail() {
     doc.setFontSize(isModern ? 9.3 : 10);
     doc.text(`N°: ${sourceDocNumber}`, 127, isModern ? 25.5 : 27);
     doc.text(`Date: ${new Date(data.document.issue_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 32 : 34);
-    doc.text(`Statut: ${sourceStatus || data.document.status || '-'}`, 127, isModern ? 38.5 : 41);
+    doc.text(`Statut: ${statusLabels[sourceStatus || data.document.status || ''] || sourceStatus || data.document.status || '-'}`, 127, isModern ? 38.5 : 41);
     if (data.document.due_date) {
       doc.text(`Due Date: ${new Date(data.document.due_date).toLocaleDateString('fr-FR')}`, 127, isModern ? 45 : 48);
     }
@@ -768,7 +773,9 @@ export default function FacturationDetail() {
       finalY = notesY + 5 + notesLines.length * 4.2;
       doc.setTextColor(0, 0, 0);
     }
-    const paymentStatus = paymentSummary.remaining <= 0.0001 ? 'PAYE' : paymentSummary.paid > 0 ? 'PARTIEL' : 'NON PAYE';
+    const displayPaid = sourceStatus === 'paid' ? sourceTotals.total : paymentSummary.paid;
+    const displayRemaining = sourceStatus === 'paid' ? 0 : Math.max(0, sourceTotals.total - displayPaid);
+    const paymentStatus = sourceStatus === 'paid' || displayRemaining <= 0.0001 ? 'PAYE' : displayPaid > 0 ? 'PARTIEL' : 'NON PAYE';
     if (finalY > 215) {
       doc.addPage();
       finalY = 20;
@@ -783,8 +790,8 @@ export default function FacturationDetail() {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.text(`Mode de règlement: ${paymentStatus}`, 14, finalY + 16);
-    doc.text(`Payé: ${paymentSummary.paid.toFixed(2)} MAD`, 14, finalY + 22);
-    doc.text(`Reste: ${paymentSummary.remaining.toFixed(2)} MAD`, 14, finalY + 28);
+    doc.text(`Payé: ${displayPaid.toFixed(2)} MAD`, 14, finalY + 22);
+    doc.text(`Reste: ${displayRemaining.toFixed(2)} MAD`, 14, finalY + 28);
     const amountWords = numberToFrenchWords(sourceTotals.total);
     doc.text(`Arrêtée à la somme de: ${amountWords} dirhams`, 14, finalY + 34);
 
@@ -1073,7 +1080,7 @@ export default function FacturationDetail() {
                     <CardDescription>{currentDocLabel} · {new Date(data.document.issue_date).toLocaleDateString('fr-FR')}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap md:justify-end">
-                    <Badge variant="outline">{data.document.status}</Badge>
+                    <Badge variant="outline">{statusLabels[data.document.status] || data.document.status}</Badge>
                     <Select value={pdfTemplate} onValueChange={(value: PdfTemplate) => setPdfTemplate(value)}>
                       <SelectTrigger className="w-[130px] h-8">
                         <SelectValue />
@@ -1199,30 +1206,28 @@ export default function FacturationDetail() {
                           {step.label}
                         </Button>
                       ))}
+                      {isInvoice && (
+                        <div className="flex items-center gap-2 ml-4">
+                          <Label className="whitespace-nowrap">Montant partiel:</Label>
+                          <Input
+                            type="number"
+                            value={partialAmount}
+                            onChange={(e) => setPartialAmount(e.target.value)}
+                            onFocus={(e) => e.currentTarget.select()}
+                            className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none w-[120px] h-8"
+                            placeholder="Montant..."
+                          />
+                          <Button size="sm" className="h-8" onClick={handleConfirmPartialPayment} disabled={!partialAmount || createEvent.isPending}>
+                            Valider
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <Label>Adresse</Label>
                     <Textarea value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} rows={2} />
                   </div>
-                  {isInvoice ? (
-                    <div className="space-y-1">
-                      <Label>Montant partiel (obligatoire)</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          value={partialAmount}
-                          onChange={(e) => setPartialAmount(e.target.value)}
-                          onFocus={(e) => e.currentTarget.select()}
-                          className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          placeholder="Montant..."
-                        />
-                        <Button size="sm" onClick={handleConfirmPartialPayment} disabled={!partialAmount || createEvent.isPending}>
-                          Valider Partiel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
                 <div className="border rounded-md overflow-hidden">
                   <Table className="w-full">
@@ -1443,7 +1448,7 @@ export default function FacturationDetail() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-sm font-medium">{inv.doc_number}</div>
-                        <Badge variant="outline">{inv.status}</Badge>
+                        <Badge variant="outline">{statusLabels[inv.status] || inv.status}</Badge>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         {new Date(inv.issue_date).toLocaleDateString('fr-FR')} · {Number(inv.total_amount || 0).toFixed(2)} MAD

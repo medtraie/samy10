@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -130,6 +130,19 @@ const CREDIT_NOTE_MARKER = '[AVOIR_FACTURE]';
 const hasCreditNoteMarker = (notes: string | null | undefined) =>
   typeof notes === 'string' && notes.includes(CREDIT_NOTE_MARKER);
 
+export const statusLabels: Record<string, string> = {
+  draft: 'Brouillon',
+  sent: 'Envoyé',
+  approved: 'Accepté',
+  rejected: 'Refusé',
+  delivered: 'Livré',
+  paid: 'Payé',
+  unpaid: 'Non payé',
+  partial: 'Partiel',
+  overdue: 'En retard',
+  failed: 'Échoué',
+};
+
 export default function Facturation() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -139,6 +152,7 @@ export default function Facturation() {
   const [achatsTab, setAchatsTab] = useState<'orders' | 'invoices'>('orders');
   const [contactsSearch, setContactsSearch] = useState('');
   const [clientFormOpen, setClientFormOpen] = useState(false);
+  const [returnToDocCreation, setReturnToDocCreation] = useState(false);
   const [newClientType, setNewClientType] = useState<'societe' | 'particulier'>('societe');
   const [newClientName, setNewClientName] = useState('');
   const [newClientCompany, setNewClientCompany] = useState('');
@@ -713,11 +727,11 @@ export default function Facturation() {
     return map;
   }, [paymentEventsQ.data]);
 
-  const invoiceRemaining = (doc: FactDocument) => {
+  const invoiceRemaining = React.useCallback((doc: FactDocument) => {
     if (doc.status === 'paid') return 0;
     const paid = invoicePaidById.get(doc.id) || 0;
     return Math.max(0, Number(doc.total_amount || 0) - paid);
-  };
+  }, [invoicePaidById]);
 
   const purchasesRows = useMemo(
     () =>
@@ -878,19 +892,34 @@ export default function Facturation() {
       return (
         <Badge variant="destructive" className="gap-1">
           <TriangleAlert className="w-3 h-3" />
-          {doc.status}
+          {statusLabels[doc.status] || doc.status}
         </Badge>
       );
     }
     return (
       <Badge variant="outline" className="gap-1">
         <Clock3 className="w-3 h-3" />
-        {doc.status}
+        {statusLabels[doc.status] || doc.status}
       </Badge>
     );
   };
 
+  const [registryVersion, setRegistryVersion] = useState(0);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'unified-clients-registry-v1') {
+        setRegistryVersion((v) => v + 1);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const registryClients = getUnifiedClientsRegistry();
+
   const contactsRows = useMemo(() => {
+    const registry = registryClients;
     const inferredSuppliers = clientsSummary
       .slice(0, 8)
       .map((row, idx) => ({
@@ -901,20 +930,41 @@ export default function Facturation() {
         phone: `+212 6${(10000000 + idx * 1337).toString().slice(0, 8)}`,
       }));
     const suppliers = [...manualSuppliers, ...inferredSuppliers];
+    
+    const unifiedClients = registry.map(item => ({
+      id: item.id,
+      name: item.name,
+      city: item.city || '',
+      email: item.email || '',
+      phone: item.phone || '',
+      total: clientsSummary.find(c => c.client === item.name)?.total || 0,
+      company: item.company || '',
+      notes: item.notes || '',
+    }));
+
     const inferredClients = clientsSummary
+      .filter(row => !unifiedClients.some(c => c.name === row.client))
       .map((row, idx) => ({
         id: `cli-${idx}`,
         name: row.client,
-        city: ['Casablanca', 'Rabat', 'Agadir', 'Fès', 'Meknès'][idx % 5],
-        email: `${row.client.replace(/\s+/g, '.').toLowerCase()}@client.com`,
-        phone: `+212 6${(20000000 + idx * 1777).toString().slice(0, 8)}`,
+        city: '',
+        email: '',
+        phone: '',
         total: row.total,
         company: '',
         notes: '',
       }));
-    const clients = [...manualClients, ...inferredClients];
+      
+    const clients = [...unifiedClients, ...inferredClients, ...manualClients].reduce((acc, curr) => {
+      if (!acc.some(c => c.name === curr.name)) {
+        acc.push(curr);
+      }
+      return acc;
+    }, [] as Array<any>);
+
     return { suppliers, clients };
-  }, [clientsSummary, manualClients, manualSuppliers]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientsSummary, manualClients, manualSuppliers, registryClients, registryVersion]);
 
   const contactsFiltered = useMemo(() => {
     const q = contactsSearch.trim().toLowerCase();
@@ -1041,7 +1091,7 @@ export default function Facturation() {
     bulkUpdateSupplierInvoicesStatus.mutate({ ids: [id], status: nextStatus });
   };
 
-  const openClientCreation = () => {
+  const openClientCreation = (fromDocModal = false) => {
     setMainModule('contacts');
     setContactsTab('clients');
     setNewClientType('societe');
@@ -1063,6 +1113,7 @@ export default function Facturation() {
     setNewClientNotes('');
     setClientFormOpen(true);
     setSupplierFormOpen(false);
+    setReturnToDocCreation(fromDocModal);
   };
 
   const openSupplierCreation = () => {
@@ -1146,6 +1197,35 @@ export default function Facturation() {
     setNewClientRc('');
     setNewClientCreatedDate(new Date().toISOString().slice(0, 10));
     setNewClientNotes('');
+
+    if (returnToDocCreation) {
+      setReturnToDocCreation(false);
+      createDoc.mutate(
+        {
+          doc_type: currentStage,
+          client_name: name,
+          client_email: newClientEmail.trim() || `${name.replace(/\s+/g, '.').toLowerCase()}@client.com`,
+          client_phone: newClientPhone.trim() || '+212 600000000',
+          client_address: `${newClientCity.trim() || 'Casablanca'}, Maroc`,
+          issue_date: new Date().toISOString().slice(0, 10),
+          due_date: null,
+          status: 'draft',
+          language: 'fr',
+          direction: 'ltr',
+          template_type: 'modern',
+          show_header: true,
+          show_footer: true,
+          notes: newClientIce.trim() ? `[ICE_CLIENT:${newClientIce.trim()}]` : null,
+          tax_rate: 20,
+          discount_amount: 0,
+        },
+        {
+          onSuccess: (doc) => {
+            navigate(`/facturation/${doc.id}`);
+          }
+        }
+      );
+    }
   };
 
   const setUnifiedFacturationClientField = <K extends keyof UnifiedClientFormValues>(
@@ -1629,48 +1709,88 @@ export default function Facturation() {
     }
   };
 
+  const totalSelectedRemaining = useMemo(() => {
+    return selectedInvoiceIds.reduce((acc, id) => {
+      const doc = docs.find((d) => d.id === id);
+      return acc + (doc ? invoiceRemaining(doc) : 0);
+    }, 0);
+  }, [selectedInvoiceIds, docs, invoiceRemaining]);
+
   const handleSettleDebt = () => {
-    if (selectedInvoiceIds.length !== 1) return;
-    const targetId = selectedInvoiceIds[0];
-    const targetDoc = docs.find((d) => d.id === targetId);
-    if (!targetDoc) return;
-    const paidBefore = invoicePaidById.get(targetId) || 0;
-    const remainingBefore = Math.max(0, Number(targetDoc.total_amount || 0) - paidBefore);
-    const amount = Number(settlementAmount || 0);
-    if (Number.isNaN(amount) || amount <= 0 || amount > remainingBefore) return;
-    const paidAfter = paidBefore + amount;
-    const remainingAfter = Math.max(0, Number(targetDoc.total_amount || 0) - paidAfter);
-    const nextStatus = remainingAfter <= 0 ? 'paid' : paidAfter > 0 ? 'partial' : 'unpaid';
-    createEvent.mutate(
-      {
-        document_id: targetId,
-        event_type: 'payment_recorded',
-        event_label: 'Règlement de dette',
-        event_payload: {
-          amount,
-          paid_before: paidBefore,
-          paid_after: paidAfter,
-          remaining_after: remainingAfter,
-        },
-      },
-      {
-        onSuccess: () => {
-          updateDoc.mutate(
-            {
-              id: targetId,
-              status: nextStatus,
-            },
-            {
-              onSuccess: () => {
-                queryClient.invalidateQueries({ queryKey: ['fact-documents'] });
-                queryClient.invalidateQueries({ queryKey: ['facturation_payment_events'] });
-                setSettlementAmount('');
-              },
-            }
-          );
-        },
+    if (selectedInvoiceIds.length === 0) return;
+    
+    let amountToDistribute = settlementAmount ? Number(settlementAmount) : totalSelectedRemaining;
+    if (Number.isNaN(amountToDistribute) || amountToDistribute <= 0) return;
+
+    const processNext = (index: number) => {
+      if (index >= selectedInvoiceIds.length || amountToDistribute <= 0) {
+        queryClient.invalidateQueries({ queryKey: ['fact-documents'] });
+        queryClient.invalidateQueries({ queryKey: ['facturation_payment_events'] });
+        setSettlementAmount('');
+        setSelectedInvoiceIds([]);
+        return;
       }
-    );
+
+      const targetId = selectedInvoiceIds[index];
+      const targetDoc = docs.find((d) => d.id === targetId);
+      
+      if (!targetDoc) {
+        processNext(index + 1);
+        return;
+      }
+
+      const paidBefore = invoicePaidById.get(targetId) || 0;
+      const remainingBefore = Math.max(0, Number(targetDoc.total_amount || 0) - paidBefore);
+
+      if (remainingBefore <= 0) {
+        processNext(index + 1);
+        return;
+      }
+
+      const amountForThisDoc = Math.min(remainingBefore, amountToDistribute);
+      amountToDistribute -= amountForThisDoc;
+
+      const paidAfter = paidBefore + amountForThisDoc;
+      const remainingAfter = Math.max(0, Number(targetDoc.total_amount || 0) - paidAfter);
+      const nextStatus = remainingAfter <= 0 ? 'paid' : paidAfter > 0 ? 'partial' : 'unpaid';
+
+      createEvent.mutate(
+        {
+          document_id: targetId,
+          event_type: 'payment_recorded',
+          event_label: 'Règlement de dette',
+          event_payload: {
+            amount: amountForThisDoc,
+            paid_before: paidBefore,
+            paid_after: paidAfter,
+            remaining_after: remainingAfter,
+          },
+        },
+        {
+          onSuccess: () => {
+            updateDoc.mutate(
+              {
+                id: targetId,
+                status: nextStatus,
+              },
+              {
+                onSuccess: () => {
+                  processNext(index + 1);
+                },
+                onError: () => {
+                  processNext(index + 1);
+                }
+              }
+            );
+          },
+          onError: () => {
+            processNext(index + 1);
+          }
+        }
+      );
+    };
+
+    processNext(0);
   };
 
   const handleDownloadInvoicePdf = (id: string): Promise<void> =>
@@ -1866,7 +1986,7 @@ export default function Facturation() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => { setNewDocDialogOpen(false); openClientCreation(); }}>
+                      <Button size="sm" variant="outline" onClick={() => { setNewDocDialogOpen(false); openClientCreation(true); }}>
                         + Nouveau
                       </Button>
                     </div>
@@ -1954,22 +2074,14 @@ export default function Facturation() {
                     <Input
                       className="w-[160px] h-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       type="number"
-                      placeholder="Montant règlement"
+                      placeholder={`Reste: ${totalSelectedRemaining.toFixed(2)} MAD`}
                       value={settlementAmount}
                       onChange={(e) => setSettlementAmount(e.target.value)}
                       onFocus={(e) => e.currentTarget.select()}
                     />
-                    <Button size="sm" onClick={handleSettleDebt} disabled={selectedInvoiceIds.length !== 1 || !settlementAmount}>
+                    <Button size="sm" onClick={handleSettleDebt} disabled={selectedInvoiceIds.length === 0 || (!settlementAmount && totalSelectedRemaining <= 0)}>
                       Règlement dette
                     </Button>
-                    {selectedInvoiceIds.length === 1 && (
-                      <span className="text-xs text-slate-300">
-                        Reste: {(() => {
-                          const doc = docs.find((d) => d.id === selectedInvoiceIds[0]);
-                          return doc ? invoiceRemaining(doc).toFixed(2) : '0.00';
-                        })()} MAD
-                      </span>
-                    )}
                   </div>
                 )}
                 {salesView === 'table' ? (
@@ -2696,7 +2808,7 @@ export default function Facturation() {
           )}
         </Card>
 
-        {false && mainModule === 'sales' && editorOpen && (
+        {mainModule === 'sales' && editorOpen && (
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
             <Card className="xl:col-span-8">
               <CardHeader className="pb-3">

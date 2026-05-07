@@ -13,6 +13,7 @@ import { getUnifiedClientsRegistry, type UnifiedClientModule, upsertUnifiedClien
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
+import { useFactDocuments } from '@/hooks/useFacturation';
 
 type UnifiedListRow = {
   id: string;
@@ -31,6 +32,7 @@ export default function Clients() {
   const queryClient = useQueryClient();
   const { data: tourismClients = [] } = useTourismClients();
   const { data: tmsClients = [] } = useTMSClients();
+  const { data: factDocuments = [] } = useFactDocuments();
   const createTourismClient = useCreateTourismClient();
   const createTmsClient = useCreateTMSClient();
   const updateTourismClient = useUpdateTourismClient();
@@ -133,8 +135,33 @@ export default function Clients() {
         email: item.email || '',
         city: item.city || '',
       }));
-    return [...fromFacturation, ...fromTourism, ...fromTms];
-  }, [tourismClients, tmsClients, registryClients]);
+
+    // Also infer clients directly from existing invoices so "Contacts > Clients"
+    // in Facturation and /clients stay consistent even if registry was not updated.
+    const fromFactDocumentsMap = new Map<string, UnifiedListRow>();
+    factDocuments.forEach((doc) => {
+      const name = (doc.client_name || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (fromFactDocumentsMap.has(key)) return;
+      fromFactDocumentsMap.set(key, {
+        id: `fact-doc-${doc.id}`,
+        sourceModule: 'facturation',
+        sourceId: doc.id,
+        name,
+        company: '',
+        ice: '',
+        phone: doc.client_phone || '',
+        email: doc.client_email || '',
+        city: '',
+      });
+    });
+    const fromFactDocuments = Array.from(fromFactDocumentsMap.values()).filter(
+      (row) => !fromFacturation.some((f) => f.name.trim().toLowerCase() === row.name.trim().toLowerCase())
+    );
+
+    return [...fromFacturation, ...fromFactDocuments, ...fromTourism, ...fromTms];
+  }, [tourismClients, tmsClients, registryClients, factDocuments]);
 
   const filteredRows = useMemo(() => {
     if (!search.trim()) return unifiedRows;
