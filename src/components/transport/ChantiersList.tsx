@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useChantiers, useDeleteChantier, useSyncGeofencesToChantiers, useVoyages, useTrajets, useCreateTrajet } from '@/hooks/useTransportBTP';
 import { useGPSwoxGeofences } from '@/hooks/useGPSwoxGeofences';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +28,35 @@ export function ChantiersList() {
   const deleteChantier = useDeleteChantier();
   const syncGeofences = useSyncGeofencesToChantiers();
   const createTrajet = useCreateTrajet();
+
+  const [dummyZones, setDummyZones] = useState(() => 
+    Array.from({ length: 12 }).map((_, i) => ({
+      id: i,
+      name: i % 2 === 0 ? 'ZONE A' : 'ZONE B',
+      camions: [
+        { name: 'camion1', count: Math.floor(Math.random() * 5) + 5 },
+        { name: 'camion2', count: Math.floor(Math.random() * 5) + 3 },
+        { name: 'camion3', count: Math.floor(Math.random() * 5) + 2 },
+        { name: 'camion4', count: Math.floor(Math.random() * 5) + 1 },
+      ],
+      totalVehicles: Math.floor(Math.random() * 10) + 10
+    }))
+  );
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDummyZones(prev => prev.map(zone => {
+        const newCamions = zone.camions.map(c => ({ ...c, count: Math.floor(Math.random() * 10) + 1 }));
+        const newTotal = newCamions.reduce((acc, curr) => acc + curr.count, 0) - Math.floor(Math.random() * 5);
+        return {
+          ...zone,
+          camions: newCamions,
+          totalVehicles: newTotal > 0 ? newTotal : 10
+        };
+      }));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const isLoading = chantiersLoading || geofencesLoading;
   const chantierById = useMemo(() => new Map(chantiers.map((c) => [c.id, c])), [chantiers]);
@@ -155,131 +184,38 @@ export function ChantiersList() {
         </Card>
       )}
 
-      {chantiers.length === 0 && geofences.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Aucune zone ou chantier enregistré</p>
-            <p className="text-sm text-muted-foreground">Ajoutez votre premier chantier ou importez depuis GPSwox</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {geofences.map((geofence) => {
-            const isImported = chantiers.some(c => c.name.toLowerCase() === geofence.name.toLowerCase());
-            return (
-              <Card key={`geo-${geofence.id}`} className={`relative border-l-4 border-l-primary/50 bg-primary/5`}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
-                        <Target className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base truncate max-w-[150px]" title={geofence.name}>
-                          {geofence.name}
-                        </CardTitle>
-                        <Badge variant="outline" className="mt-1 bg-primary/10 text-primary border-primary/20">
-                          Zone GPSwox
-                        </Badge>
-                      </div>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {dummyZones.map((zone) => (
+          <Card key={zone.id} className="overflow-hidden border-border/50 shadow-sm hover:shadow-md transition-shadow">
+            <div className="bg-muted/30 px-4 py-2 border-b border-border/50 flex items-center justify-between">
+              <span className="font-bold text-foreground">{zone.name}</span>
+              <span className="text-xs text-muted-foreground">ce mois</span>
+              <span className="text-xs font-medium text-emerald-600 bg-emerald-100/50 dark:bg-emerald-900/30 px-2 py-0.5 rounded">actif</span>
+            </div>
+            <CardContent className="p-4 bg-background">
+              <div className="text-center mb-4">
+                <p className="text-xs text-muted-foreground mb-1">cette semaine</p>
+              </div>
+              <div className="flex justify-between items-end">
+                <div className="space-y-1">
+                  {zone.camions.map((camion, idx) => (
+                    <div key={idx} className="text-xs font-medium text-muted-foreground">
+                      {camion.name}:{camion.count}
                     </div>
-                    <Badge variant={geofence.active ? 'default' : 'secondary'}>
-                      {geofence.active ? 'Actif' : 'Inactif'}
-                    </Badge>
+                  ))}
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-xs text-muted-foreground mb-1">aujourd'hui</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">NBR DE Véhicules</span>
+                  <div className="bg-primary/10 text-primary text-xl font-bold px-6 py-2 rounded-md shadow-sm">
+                    {zone.totalVehicles}
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm pt-2">
-                  <p className="text-muted-foreground flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Synchronisé depuis GPSwox
-                  </p>
-                  {isImported && (
-                    <p className="text-xs text-emerald-500 font-medium">✓ Utilisé dans vos trajets</p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {chantiers.map((chantier) => {
-            const isFromGPSwox = geofenceNames.has(chantier.name.toLowerCase());
-            if (isFromGPSwox) return null;
-
-            return (
-              <Card key={chantier.id} className="relative">
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                        <Building2 className="w-5 h-5 text-slate-500" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base truncate max-w-[150px]" title={chantier.name}>
-                          {chantier.name}
-                        </CardTitle>
-                        <Badge variant={chantier.type === 'carriere' ? 'secondary' : 'outline'} className="mt-1">
-                          {chantier.type === 'carriere' ? 'Carrière' : 'Chantier Local'}
-                        </Badge>
-                      </div>
-                    </div>
-                    <Badge variant={chantier.status === 'active' ? 'default' : 'secondary'}>
-                      {chantier.status === 'active' ? 'Actif' : 'Inactif'}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  {chantier.city && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <MapPin className="w-4 h-4" />
-                      <span>{chantier.city}</span>
-                    </div>
-                  )}
-                  {chantier.contact_name && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <User className="w-4 h-4" />
-                      <span>{chantier.contact_name}</span>
-                    </div>
-                  )}
-                  {chantier.contact_phone && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="w-4 h-4" />
-                      <span>{chantier.contact_phone}</span>
-                    </div>
-                  )}
-
-                  <div className="pt-2 flex justify-end">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Supprimer ce site ?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Cette action est irréversible. Le site "{chantier.name}" sera supprimé définitivement.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Annuler</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => deleteChantier.mutate(chantier.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Supprimer
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

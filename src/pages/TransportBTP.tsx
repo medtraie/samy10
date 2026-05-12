@@ -1,12 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Route, TruckIcon, FileText, MapPin, LayoutDashboard } from 'lucide-react';
+import { Route, MapPin, LayoutDashboard, FileSpreadsheet } from 'lucide-react';
 import { TrajetsList } from '@/components/transport/TrajetsList';
-import { VoyagesList } from '@/components/transport/VoyagesList';
-import { FacturesList } from '@/components/transport/FacturesList';
 import { ChantiersList } from '@/components/transport/ChantiersList';
 import { TransportBTPDashboard } from '@/components/transport/TransportBTPDashboard';
+import { BonDeCommande } from '@/components/transport/BonDeCommande';
 import { useTourismCompanyProfile } from '@/hooks/useTourismCompany';
 
 export default function TransportBTP() {
@@ -27,7 +26,7 @@ export default function TransportBTP() {
         </div>
 
         <Tabs defaultValue="dashboard" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:w-auto lg:inline-grid">
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <LayoutDashboard className="w-4 h-4" />
               <span className="hidden sm:inline">Tableau de bord</span>
@@ -40,13 +39,9 @@ export default function TransportBTP() {
               <Route className="w-4 h-4" />
               <span className="hidden sm:inline">Trajets</span>
             </TabsTrigger>
-            <TabsTrigger value="voyages" className="flex items-center gap-2">
-              <TruckIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Voyages</span>
-            </TabsTrigger>
-            <TabsTrigger value="facturation" className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              <span className="hidden sm:inline">Facturation</span>
+            <TabsTrigger value="bon_commande" className="flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4" />
+              <span className="hidden sm:inline">Bon de commande</span>
             </TabsTrigger>
           </TabsList>
 
@@ -62,12 +57,8 @@ export default function TransportBTP() {
             <TrajetsList />
           </TabsContent>
 
-          <TabsContent value="voyages" className="mt-6">
-            <VoyagesList />
-          </TabsContent>
-
-          <TabsContent value="facturation" className="mt-6">
-            <FacturesList />
+          <TabsContent value="bon_commande" className="mt-6">
+            <BonDeCommande />
           </TabsContent>
         </Tabs>
       </div>
